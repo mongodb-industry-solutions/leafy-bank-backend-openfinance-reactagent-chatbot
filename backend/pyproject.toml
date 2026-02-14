@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "your-virtual-env"
+name = "openfinance-chatbot"
 version = "0.1.0"
-description = "This repository hosts the backend for the Capital Markets React Agent."
-authors = ["Julian Boronat <julian.boronat@mongodb.com>"]
+description = "Multi-agent chatbot backend for Open Finance consent management and financial advice."
+authors = []
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -16,13 +16,8 @@ botocore = "^1.35.70"
 langchain-aws = "^1.2.0"
 langchain-mongodb = "^0.8.0"
 langgraph = "^1.0.0"
-langchain-tavily = "^0.2.10"
 voyageai = "^0.3.2"
 langgraph-checkpoint-mongodb = "^0.3.0"
-rich = "13.9.4"
-scheduler = "^0.8.8"
-pytz = "^2025.2"
-
 
 [build-system]
 requires = ["poetry-core"]

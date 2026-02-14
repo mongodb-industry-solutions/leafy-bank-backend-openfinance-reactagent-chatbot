@@ -13,7 +13,7 @@ steps:
     settings:
       create_repository: true
       registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
-      repo: industrysolutions/capitalmarkets-react-agent-stocks
+      repo: industrysolutions/openfinance-chatbot
       tags:
         - git-${DRONE_COMMIT_SHA:0:7}
         - latest
@@ -33,12 +33,12 @@ steps:
       chart_version: 4.25.0
       add_repos: [mongodb=https://10gen.github.io/helm-charts]
       namespace: industrysolutions
-      release: capitalmarkets-react-agent-stocks
+      release: openfinance-chatbot
       values:
         - "image.tag=git-${DRONE_COMMIT_SHA:0:7}"
-        - "image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/capitalmarkets-react-agent-stocks"
+        - "image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/openfinance-chatbot"
         - "ingress.enabled=true"
-        - "ingress.hosts[0]=capitalmarkets-react-agent-stocks.industrysolutions.staging.corp.mongodb.com"
+        - "ingress.hosts[0]=openfinance-chatbot.industrysolutions.staging.corp.mongodb.com"
         - "mesh.enabled=true"
         - "resources.limits.cpu=1000m"
         - "resources.limits.memory=1024Mi"
@@ -66,7 +66,7 @@ steps:
     settings:
       create_repository: true
       registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
-      repo: industrysolutions/capitalmarkets-react-agent-stocks
+      repo: industrysolutions/openfinance-chatbot
       tags:
         - git-${DRONE_COMMIT_SHA:0:7}
         - latest
@@ -86,12 +86,12 @@ steps:
       chart_version: 4.25.0
       add_repos: [mongodb=https://10gen.github.io/helm-charts]
       namespace: industrysolutions
-      release: capitalmarkets-react-agent-stocks
+      release: openfinance-chatbot
       values:
         - "image.tag=git-${DRONE_COMMIT_SHA:0:7}"
-        - "image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/capitalmarkets-react-agent-stocks"
+        - "image.repository=795250896452.dkr.ecr.us-east-1.amazonaws.com/industrysolutions/openfinance-chatbot"
         - "ingress.enabled=true"
-        - "ingress.hosts[0]=capitalmarkets-react-agent-stocks.industrysolutions.prod.corp.mongodb.com"
+        - "ingress.hosts[0]=openfinance-chatbot.industrysolutions.prod.corp.mongodb.com"
         - "mesh.enabled=true"
         - "resources.limits.cpu=1000m"
         - "resources.limits.memory=1024Mi"
