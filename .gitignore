@@ -170,3 +170,4 @@ cython_debug/
 API_REFERENCE.md
 backend/agent/prompts/consent.md
 CLAUDE.md
+backend/agent/prompts/analysis.md

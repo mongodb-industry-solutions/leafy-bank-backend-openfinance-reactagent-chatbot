@@ -50,14 +50,34 @@ async def supervisor_node(state: dict) -> dict:
     active_consent_purpose = state.get("active_consent_purpose")
 
     # Check if a consent was just approved (not yet tracked in state)
+    newly_approved = False
     if not active_consent_id:
         found_id, found_purpose = _extract_consent_info_from_messages(messages)
         if found_id:
             active_consent_id = found_id
             active_consent_purpose = found_purpose
+            newly_approved = True
             logger.info(
                 f"Supervisor detected approved consent: {found_id}, purpose: {found_purpose}"
             )
+
+    # Quick exit: if the last message is from a sub-agent (AI) and no consent
+    # was just approved, route to FINISH so the user sees the response.
+    # This prevents looping (supervisor → agent → supervisor → agent ...).
+    last_msg = messages[-1] if messages else None
+    if (
+        last_msg
+        and hasattr(last_msg, "type")
+        and last_msg.type == "ai"
+        and last_msg.content
+        and not newly_approved
+    ):
+        logger.info("Supervisor: sub-agent responded, returning to user")
+        return {
+            "next": "FINISH",
+            "active_consent_id": active_consent_id,
+            "active_consent_purpose": active_consent_purpose,
+        }
 
     # Build context for LLM
     context_parts = []

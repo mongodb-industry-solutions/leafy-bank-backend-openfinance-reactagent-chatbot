@@ -19,6 +19,7 @@ from agent.tools.analysis_tools import (
     calculate_total_debt,
     fetch_customer_identification,
     find_user,
+    calculate_spending_score,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "analysis.md"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
 TOOLS = [
+    calculate_spending_score,
     fetch_external_data,
     fetch_spending_transactions,
     get_spending_best_practices,

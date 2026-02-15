@@ -45,20 +45,23 @@ async def main():
 
         # Check for interrupts
         state = await agent.aget_state(config)
+        has_interrupt = False
         if state.next:
             for task in state.tasks:
                 if hasattr(task, "interrupts") and task.interrupts:
                     interrupt_data = task.interrupts[0].value
                     print(f"\n  [INTERRUPT: {interrupt_data}]")
                     print("  Type 'resume' to simulate bank login completion\n")
+                    has_interrupt = True
                     break
 
-        # Print last AI message
-        messages = state.values.get("messages", [])
-        for msg in reversed(messages):
-            if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                print(f"\nAgent: {msg.content}\n")
-                break
+        # Print last AI message (skip when interrupted — last AI msg is stale)
+        if not has_interrupt:
+            messages = state.values.get("messages", [])
+            for msg in reversed(messages):
+                if hasattr(msg, "type") and msg.type == "ai" and msg.content:
+                    print(f"\nAgent: {msg.content}\n")
+                    break
 
 
 if __name__ == "__main__":
