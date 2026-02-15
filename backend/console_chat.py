@@ -1,4 +1,4 @@
-"""CLI chatbot for testing the consent agent locally."""
+"""CLI chatbot for testing the multi-agent system locally."""
 
 import asyncio
 import uuid
@@ -6,12 +6,12 @@ import uuid
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from agent.consent_agent import get_checkpointer, create_consent_agent
+from graph import get_checkpointer, build_graph
 
 
 async def main():
     checkpointer = get_checkpointer()
-    agent = create_consent_agent(checkpointer)
+    agent = build_graph(checkpointer)
 
     thread_id = str(uuid.uuid4())
     user_id = input("Enter user_id (e.g. fridaklo): ").strip() or "fridaklo"
@@ -23,7 +23,7 @@ async def main():
         }
     }
 
-    print(f"\nConsent Agent CLI — user: {user_id}, thread: {thread_id[:8]}...")
+    print(f"\nMulti-Agent CLI — user: {user_id}, thread: {thread_id[:8]}...")
     print("Type 'quit' to exit, 'resume' to simulate bank login resume\n")
 
     while True:

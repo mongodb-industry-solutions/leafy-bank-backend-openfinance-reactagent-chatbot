@@ -10,7 +10,7 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from api_checkpointer import router as checkpointer_router
-from agent.consent_agent import get_checkpointer, create_consent_agent
+from graph import get_checkpointer, build_graph
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Manage resources: checkpointer and agent graph."""
     checkpointer = get_checkpointer()
-    app.state.agent = create_consent_agent(checkpointer)
-    logger.info("Consent agent initialized")
+    app.state.agent = build_graph(checkpointer)
+    logger.info("Multi-agent graph initialized")
     yield
 
 

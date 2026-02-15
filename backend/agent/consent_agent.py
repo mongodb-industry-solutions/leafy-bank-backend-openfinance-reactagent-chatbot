@@ -1,18 +1,12 @@
+"""Consent agent — guides users through Open Finance consent creation and management."""
+
 import logging
 from pathlib import Path
 
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
-from langgraph.checkpoint.mongodb import MongoDBSaver
 
-from config import (
-    AWS_REGION,
-    CHAT_COMPLETIONS_MODEL_ID,
-    DATABASE_NAME,
-    CHECKPOINTS_AIO_COLLECTION,
-    CHECKPOINTS_WRITES_AIO_COLLECTION,
-)
-from agent.db.mdb import MongoDBConnector
+from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
 from agent.tools.consent_tools import (
     list_institutions,
     get_default_permissions,
@@ -42,22 +36,9 @@ TOOLS = [
     revoke_consent,
 ]
 
-# Shared MongoDB connector — single client for the app
-db = MongoDBConnector()
 
-
-def get_checkpointer() -> MongoDBSaver:
-    """Create and return a MongoDBSaver using the shared MongoDB client."""
-    return MongoDBSaver(
-        client=db.client,
-        db_name=DATABASE_NAME,
-        checkpoint_collection_name=CHECKPOINTS_AIO_COLLECTION,
-        writes_collection_name=CHECKPOINTS_WRITES_AIO_COLLECTION,
-    )
-
-
-def create_consent_agent(checkpointer: MongoDBSaver):
-    """Build and return the compiled consent agent graph."""
+def create_consent_agent():
+    """Build and return the consent agent graph (no checkpointer)."""
     llm = ChatBedrockConverse(
         model=CHAT_COMPLETIONS_MODEL_ID,
         region_name=AWS_REGION,
@@ -68,7 +49,7 @@ def create_consent_agent(checkpointer: MongoDBSaver):
         model=llm,
         tools=TOOLS,
         system_prompt=SYSTEM_PROMPT,
-        checkpointer=checkpointer,
+        name="consent_agent",
     )
 
     logger.info("Consent agent created successfully")
