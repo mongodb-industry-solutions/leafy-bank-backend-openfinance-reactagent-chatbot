@@ -186,6 +186,7 @@ async def fetch_internal_accounts(config: RunnableConfig) -> str:
 @tool
 async def calculate_total_balance(
     user_object_id: str,
+    consent_id: str,
     config: RunnableConfig,
     connected_external_accounts: Optional[list[str]] = None,
 ) -> str:
@@ -193,6 +194,7 @@ async def calculate_total_balance(
 
     Args:
         user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
+        consent_id: The consent ID with ACCOUNTS_BALANCES_READ permission
         connected_external_accounts: List of external account IDs to include (from external_data.accounts)
     """
     user_id = config["configurable"]["user_id"]
@@ -203,6 +205,7 @@ async def calculate_total_balance(
             json={
                 "user_id": user_object_id,
                 "connected_external_accounts": connected_external_accounts or [],
+                "consent_id": consent_id,
             },
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -222,6 +225,7 @@ async def calculate_total_balance(
 @tool
 async def calculate_total_debt(
     user_object_id: str,
+    consent_id: str,
     config: RunnableConfig,
     connected_external_products: Optional[list[str]] = None,
 ) -> str:
@@ -229,6 +233,7 @@ async def calculate_total_debt(
 
     Args:
         user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
+        consent_id: The consent ID with LOANS_READ permission
         connected_external_products: List of external product IDs to include (from external_data.products)
     """
     user_id = config["configurable"]["user_id"]
@@ -239,6 +244,7 @@ async def calculate_total_debt(
             json={
                 "user_id": user_object_id,
                 "connected_external_products": connected_external_products or [],
+                "consent_id": consent_id,
             },
             headers={"Authorization": f"Bearer {token}"},
         )

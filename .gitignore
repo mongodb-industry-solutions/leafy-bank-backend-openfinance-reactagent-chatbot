@@ -1,6 +1,8 @@
 # task-def.json
 **/task-def.json
 plan/
+.claude/
+_state.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
