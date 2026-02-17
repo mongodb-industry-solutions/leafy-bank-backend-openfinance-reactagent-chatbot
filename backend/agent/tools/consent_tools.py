@@ -12,32 +12,21 @@ from agent.tools.auth import get_bearer_token
 
 logger = logging.getLogger(__name__)
 
+# All available permissions (superset) — used for general access (no purpose)
+ALL_PERMISSIONS = [
+    "LOANS_READ",
+    "ACCOUNTS_READ",
+    "ACCOUNTS_BALANCES_READ",
+    "REPAYMENT_HISTORY_READ",
+    "CUSTOMER_IDENTIFICATION_READ",
+    "TRANSACTIONS_READ",
+]
+
 # Default permissions per consent purpose
 PURPOSE_PERMISSIONS = {
-    "PERSONAL_LOAN_PORTABILITY": [
-        "LOANS_READ",
-        "ACCOUNTS_READ",
-        "ACCOUNTS_BALANCES_READ",
-        "REPAYMENT_HISTORY_READ",
-        "CUSTOMER_IDENTIFICATION_READ",
-        "TRANSACTIONS_READ",
-    ],
-    "PAYROLL_LOAN_PORTABILITY": [
-        "LOANS_READ",
-        "ACCOUNTS_READ",
-        "ACCOUNTS_BALANCES_READ",
-        "REPAYMENT_HISTORY_READ",
-        "CUSTOMER_IDENTIFICATION_READ",
-        "TRANSACTIONS_READ",
-    ],
-    "VEHICLE_LOAN_PORTABILITY": [
-        "LOANS_READ",
-        "ACCOUNTS_READ",
-        "ACCOUNTS_BALANCES_READ",
-        "REPAYMENT_HISTORY_READ",
-        "CUSTOMER_IDENTIFICATION_READ",
-        "TRANSACTIONS_READ",
-    ],
+    "PERSONAL_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
+    "PAYROLL_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
+    "VEHICLE_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
     "FINANCIAL_ADVICE": [
         "ACCOUNTS_READ",
         "ACCOUNTS_BALANCES_READ",
@@ -62,15 +51,20 @@ async def list_institutions() -> str:
 
 
 @tool
-async def get_default_permissions(purpose: str) -> str:
+async def get_default_permissions(purpose: Optional[str] = None) -> str:
     """Get the default data permissions that will be requested for a given consent purpose.
 
     Args:
-        purpose: The consent purpose. Must be one of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE
+        purpose: The consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit or pass null for general access (all permissions).
     """
+    if purpose is None:
+        permissions = ALL_PERMISSIONS
+        formatted = "\n".join(f"  - {p}" for p in permissions)
+        return f"Default permissions for general access (no specific purpose):\n{formatted}"
+
     purpose = purpose.upper()
     if purpose not in PURPOSE_PERMISSIONS:
-        return f"Unknown purpose '{purpose}'. Valid purposes: {', '.join(PURPOSE_PERMISSIONS.keys())}"
+        return f"Unknown purpose '{purpose}'. Valid purposes: {', '.join(PURPOSE_PERMISSIONS.keys())} (or omit for general access)"
 
     permissions = PURPOSE_PERMISSIONS[purpose]
     formatted = "\n".join(f"  - {p}" for p in permissions)
@@ -79,29 +73,30 @@ async def get_default_permissions(purpose: str) -> str:
 
 @tool
 async def create_consent(
-    purpose: str,
     source_institution_name: str,
     expiration_days: int,
     permissions: list[str],
     config: RunnableConfig,
+    purpose: Optional[str] = None,
 ) -> str:
     """Create a new data sharing consent. Only call this AFTER the user has reviewed and confirmed the scope.
 
     Args:
-        purpose: Consent purpose (PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, or FINANCIAL_ADVICE)
         source_institution_name: Name of the external bank to connect to
-        expiration_days: How long consent lasts (3-12, or 0 for one-time access)
+        expiration_days: How long consent lasts (3-30, or 0 for one-time access)
         permissions: List of approved permissions (e.g. ["LOANS_READ", "ACCOUNTS_READ"])
+        purpose: Consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit for general access (all permissions).
     """
     user_id = config["configurable"]["user_id"]
     try:
         body = {
             "consumer_id": user_id,
-            "purpose": purpose.upper(),
             "source_institution_name": source_institution_name,
             "expiration_days": expiration_days,
             "permissions": permissions,
         }
+        if purpose is not None:
+            body["purpose"] = purpose.upper()
         response = await http_client.post("/openfinance/secure/consents/", json=body)
         response.raise_for_status()
         data = response.json()
