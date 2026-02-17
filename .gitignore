@@ -2,6 +2,8 @@
 **/task-def.json
 plan/
 .claude/
+.githooks/
+setup-hooks.sh
 _state.md
 
 # Byte-compiled / optimized / DLL files
@@ -173,3 +175,4 @@ API_REFERENCE.md
 backend/agent/prompts/consent.md
 CLAUDE.md
 backend/agent/prompts/analysis.md
+security_check.sh
