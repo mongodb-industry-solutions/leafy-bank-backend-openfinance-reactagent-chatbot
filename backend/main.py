@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from api_checkpointer import router as checkpointer_router
 from graph import get_checkpointer, build_graph
+from http_client import http_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +27,8 @@ async def lifespan(app: FastAPI):
     app.state.agent = build_graph(checkpointer)
     logger.info("Multi-agent graph initialized")
     yield
+    await http_client.aclose()
+    logger.info("HTTP client closed")
 
 
 app = FastAPI(

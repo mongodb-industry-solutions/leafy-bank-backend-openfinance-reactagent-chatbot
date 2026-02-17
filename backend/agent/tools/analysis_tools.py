@@ -9,11 +9,9 @@ import httpx
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 
-from config import OPEN_FINANCE_API_BASE
+from http_client import http_client
 
 logger = logging.getLogger(__name__)
-
-http_client = httpx.AsyncClient(base_url=OPEN_FINANCE_API_BASE, timeout=30.0)
 
 
 async def _get_bearer_token(user_id: str) -> str:

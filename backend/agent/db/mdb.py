@@ -1,9 +1,7 @@
-import os
 from pymongo import MongoClient
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+from config import MONGODB_URI, DATABASE_NAME, APP_NAME
+
 
 class MongoDBConnector:
     """ A class to provide access to a MongoDB database.
@@ -17,9 +15,9 @@ class MongoDBConnector:
 
     def __init__(self, uri=None, database_name=None, appname=None):
         """ Initialize the MongoDBConnector instance. """
-        self.uri = uri or os.getenv("MONGODB_URI")
-        self.database_name = database_name or os.getenv("DATABASE_NAME")
-        self.appname = appname or os.getenv("APP_NAME")
+        self.uri = uri or MONGODB_URI
+        self.database_name = database_name or DATABASE_NAME
+        self.appname = appname or APP_NAME
         self.client = MongoClient(self.uri, appname=self.appname)
         self.db = self.client[self.database_name]
 

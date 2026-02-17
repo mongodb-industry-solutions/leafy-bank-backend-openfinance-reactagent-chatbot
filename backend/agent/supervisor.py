@@ -16,6 +16,13 @@ logger = logging.getLogger(__name__)
 PROMPT_PATH = Path(__file__).parent / "prompts" / "supervisor.md"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
+# Single LLM instance reused across all supervisor calls
+_supervisor_llm = ChatBedrockConverse(
+    model=CHAT_COMPLETIONS_MODEL_ID,
+    region_name=AWS_REGION,
+    temperature=0,
+)
+
 
 class RouterDecision(BaseModel):
     """Supervisor routing decision."""
@@ -27,6 +34,9 @@ class RouterDecision(BaseModel):
         default="",
         description="Message to send to the user. Required when next is FINISH.",
     )
+
+
+_supervisor_llm_structured = _supervisor_llm.with_structured_output(RouterDecision)
 
 
 def _extract_consent_info_from_messages(messages: list) -> tuple[Optional[str], Optional[str]]:
@@ -92,14 +102,7 @@ async def supervisor_node(state: dict) -> dict:
         content=f"{SYSTEM_PROMPT}\n\n## Current State\n{context}"
     )
 
-    llm = ChatBedrockConverse(
-        model=CHAT_COMPLETIONS_MODEL_ID,
-        region_name=AWS_REGION,
-        temperature=0,
-    )
-    llm_with_structure = llm.with_structured_output(RouterDecision)
-
-    decision: RouterDecision = await llm_with_structure.ainvoke(
+    decision: RouterDecision = await _supervisor_llm_structured.ainvoke(
         [system_msg] + messages
     )
 

@@ -1,42 +1,36 @@
-import boto3
-from botocore.config import Config
 import os
-
 from typing import Optional
 
-import os
-from dotenv import load_dotenv
+import boto3
+from botocore.config import Config
 
-load_dotenv()
+from config import AWS_REGION
 
 
 class BedrockClient:
     """Implementation of BedrockClient class."""
-    
-    def __init__(self, region_name: Optional[str] = os.getenv("AWS_REGION"), aws_access_key: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID"), 
-                 aws_secret_key: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY"), assumed_role: Optional[str] = None) -> None:
+
+    def __init__(self, region_name: Optional[str] = None, aws_access_key: Optional[str] = None,
+                 aws_secret_key: Optional[str] = None, assumed_role: Optional[str] = None) -> None:
         """Initialize BedrockClient class.
-        
+
         Args:
-            region_name (str): AWS region name. Default is os.getenv("AWS_REGION").
-            aws_access_key (str): AWS access key. Default is os.getenv("AWS_ACCESS_KEY_ID").
-            aws_secret_key (str): AWS secret key. Default is os.getenv("AWS_SECRET_ACCESS_KEY").
+            region_name (str): AWS region name. Defaults to AWS_REGION from config.
+            aws_access_key (str): AWS access key. Defaults to AWS_ACCESS_KEY_ID env var.
+            aws_secret_key (str): AWS secret key. Defaults to AWS_SECRET_ACCESS_KEY env var.
             assumed_role (str): AWS assumed role. Default is None.
         """
-        self.region_name = region_name
+        self.region_name = region_name or AWS_REGION
         self.assumed_role = assumed_role
-        self.aws_access_key = aws_access_key
-        self.aws_secret_key = aws_secret_key
+        self.aws_access_key = aws_access_key or os.getenv("AWS_ACCESS_KEY_ID")
+        self.aws_secret_key = aws_secret_key or os.getenv("AWS_SECRET_ACCESS_KEY")
     
     def _get_bedrock_client(
             self,
             runtime: Optional[bool] = True,
     ):
         """Create a boto3 client for Amazon Bedrock, with optional configuration overrides."""
-        if self.region_name is None:
-            target_region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION"))
-        else:
-            target_region = self.region_name
+        target_region = self.region_name or AWS_REGION
         session_kwargs = {"region_name": target_region}
         client_kwargs = {**session_kwargs}
         
