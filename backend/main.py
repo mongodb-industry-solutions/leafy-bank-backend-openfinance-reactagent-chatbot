@@ -1,10 +1,12 @@
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -95,11 +97,18 @@ async def read_root(request: Request):
     return {"message": "Server is running"}
 
 
+@app.get("/chatbot", response_class=HTMLResponse)
+async def chatbot_ui():
+    """Embedded chat interface for quick testing."""
+    html_path = Path(__file__).parent / "chatbot.html"
+    return HTMLResponse(content=html_path.read_text())
+
+
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, fastapi_request: Request):
     """Send a message to the consent agent."""
     thread_id = request.thread_id or str(uuid.uuid4())
-    agent = request.app.state.agent
+    agent = fastapi_request.app.state.agent
 
     config = {
         "configurable": {
@@ -123,9 +132,9 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/chat/resume", response_model=ChatResponse)
-async def chat_resume(request: ResumeRequest):
+async def chat_resume(request: ResumeRequest, fastapi_request: Request):
     """Resume a conversation after an interrupt (e.g., bank login)."""
-    agent = request.app.state.agent
+    agent = fastapi_request.app.state.agent
 
     config = {
         "configurable": {
