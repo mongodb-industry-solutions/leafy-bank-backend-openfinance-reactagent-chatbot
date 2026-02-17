@@ -8,6 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
 from http_client import http_client
+from agent.tools.auth import get_bearer_token
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +44,6 @@ PURPOSE_PERMISSIONS = {
         "TRANSACTIONS_READ",
     ],
 }
-
-
-async def _get_bearer_token(user_id: str) -> str:
-    """Get bearer token for a user from the Open Finance backend."""
-    response = await http_client.get(
-        "/openfinance/public/get-authorization",
-        params={"user_identifier": user_id},
-    )
-    response.raise_for_status()
-    return response.json()["BearerToken"]
 
 
 @tool
@@ -214,7 +205,7 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.post(
             f"/openfinance/secure/consents/{consent_id}/approve",
             headers={"Authorization": f"Bearer {token}"},
@@ -225,6 +216,7 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
         return json.dumps({
             "consent_id": consent.get("ConsentId"),
             "status": consent.get("Status"),
+            "purpose": consent.get("Purpose"),
             "message": "Consent approved successfully.",
         })
     except httpx.HTTPStatusError as e:
@@ -244,7 +236,7 @@ async def revoke_consent(consent_id: str, config: RunnableConfig) -> str:
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.delete(
             f"/openfinance/secure/consents/{consent_id}",
             headers={"Authorization": f"Bearer {token}"},

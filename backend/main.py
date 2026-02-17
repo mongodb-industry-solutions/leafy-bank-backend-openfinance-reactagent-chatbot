@@ -57,6 +57,7 @@ class ChatRequest(BaseModel):
 
 class ResumeRequest(BaseModel):
     thread_id: str
+    user_id: str
     resume_data: dict
 
 
@@ -129,6 +130,7 @@ async def chat_resume(request: ResumeRequest):
     config = {
         "configurable": {
             "thread_id": request.thread_id,
+            "user_id": request.user_id,
         }
     }
 

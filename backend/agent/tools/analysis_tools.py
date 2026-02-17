@@ -10,18 +10,9 @@ from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 
 from http_client import http_client
+from agent.tools.auth import get_bearer_token
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_bearer_token(user_id: str) -> str:
-    """Get bearer token for a user from the Open Finance backend."""
-    response = await http_client.get(
-        "/openfinance/public/get-authorization",
-        params={"user_identifier": user_id},
-    )
-    response.raise_for_status()
-    return response.json()["BearerToken"]
 
 
 # ---------- Tool 1: fetch_external_data ----------
@@ -36,7 +27,7 @@ async def fetch_external_data(consent_id: str, config: RunnableConfig) -> str:
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.get(
             f"/openfinance/secure/customers/{user_id}/external-data",
             params={"consent_id": consent_id},
@@ -197,7 +188,7 @@ async def calculate_total_balance(
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.post(
             "/openfinance/secure/calculate-total-balance-for-user/",
             json={
@@ -236,7 +227,7 @@ async def calculate_total_debt(
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.post(
             "/openfinance/secure/calculate-total-debt-for-user/",
             json={
@@ -270,7 +261,7 @@ async def fetch_customer_identification(
     """
     user_id = config["configurable"]["user_id"]
     try:
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
         response = await http_client.get(
             f"/leafybank/customers/{user_id}/identification",
             params={"consent_id": consent_id},
@@ -475,7 +466,7 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
     user_id = config["configurable"]["user_id"]
     try:
         # Fetch all three data sources concurrently
-        token = await _get_bearer_token(user_id)
+        token = await get_bearer_token(user_id)
 
         internal_task = http_client.get(
             f"/leafybank/transactions/secure/spending/{user_id}",

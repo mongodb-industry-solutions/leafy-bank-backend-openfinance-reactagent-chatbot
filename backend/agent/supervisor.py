@@ -40,17 +40,47 @@ _supervisor_llm_structured = _supervisor_llm.with_structured_output(RouterDecisi
 
 
 def _extract_consent_info_from_messages(messages: list) -> tuple[Optional[str], Optional[str]]:
-    """Scan recent tool messages for an approved consent, return (consent_id, purpose)."""
+    """Scan recent tool messages for an approved consent, return (consent_id, purpose).
+
+    Searches backward (most recent first), limited to the last 20 tool messages.
+    If the approval message doesn't include purpose, continues scanning for the
+    matching create_consent message that does.
+    """
+    tool_count = 0
+    consent_id = None
+    purpose = None
+
     for msg in reversed(messages):
         if not hasattr(msg, "type") or msg.type != "tool":
             continue
+
+        tool_count += 1
+        if tool_count > 20:
+            break
+
         try:
             data = json.loads(msg.content)
-            if isinstance(data, dict) and data.get("status") == "AUTHORISED":
-                return data.get("consent_id"), data.get("purpose")
+            if not isinstance(data, dict):
+                continue
+
+            status = (data.get("status") or "").upper()
+
+            if status == "AUTHORISED" and not consent_id:
+                consent_id = data.get("consent_id")
+                purpose = data.get("purpose")
+                if consent_id and purpose:
+                    return consent_id, purpose
+            elif (
+                consent_id
+                and data.get("consent_id") == consent_id
+                and data.get("purpose")
+            ):
+                # Found the create_consent message with purpose for same consent
+                return consent_id, data["purpose"]
         except (json.JSONDecodeError, TypeError):
             continue
-    return None, None
+
+    return consent_id, purpose
 
 
 async def supervisor_node(state: dict) -> dict:
@@ -117,5 +147,16 @@ async def supervisor_node(state: dict) -> dict:
     # When FINISH, add the supervisor's response as an AI message
     if decision.next == "FINISH" and decision.response:
         result["messages"] = [AIMessage(content=decision.response)]
+    # When routing to analysis_agent with an active consent, inject a handoff
+    # message so the analysis agent has consent_id clearly in recent history
+    elif decision.next == "analysis_agent" and active_consent_id:
+        handoff = (
+            f"Routing to analysis agent. "
+            f"Active consent ID: {active_consent_id} "
+            f"| Purpose: {active_consent_purpose}"
+        )
+        if decision.response:
+            handoff = f"{decision.response}\n\n[{handoff}]"
+        result["messages"] = [AIMessage(content=handoff)]
 
     return result
