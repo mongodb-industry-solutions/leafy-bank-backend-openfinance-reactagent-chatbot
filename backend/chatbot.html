@@ -322,6 +322,30 @@
 
   #send-btn:hover { background: #00c853; }
   #send-btn:disabled { background: #1a3a4a; color: #555; cursor: not-allowed; }
+
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-self: flex-start;
+    max-width: 720px;
+  }
+
+  .suggestion-chip {
+    background: #0f1923;
+    border: 1px solid #00ed64;
+    border-radius: 20px;
+    padding: 8px 16px;
+    color: #00ed64;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .suggestion-chip:hover {
+    background: #00ed64;
+    color: #001e2b;
+  }
 </style>
 </head>
 <body>
@@ -448,6 +472,9 @@ async function sendMessage() {
     return;
   }
 
+  const suggestionsEl = document.getElementById("suggestions");
+  if (suggestionsEl) suggestionsEl.remove();
+
   addMessage(msg, "user");
   inputEl.value = "";
   inputEl.style.height = "auto";
@@ -556,8 +583,37 @@ async function resumeInterrupt(btn) {
   }
 }
 
+function showSuggestions() {
+  const suggestions = [
+    "I want to port my personal loan to a better rate",
+    "Compare my current loan with offers from other banks",
+    "What documents do I need for loan portability?",
+    "Show me my existing loan details",
+  ];
+
+  const container = document.createElement("div");
+  container.className = "suggestions";
+  container.id = "suggestions";
+
+  suggestions.forEach(text => {
+    const chip = document.createElement("button");
+    chip.className = "suggestion-chip";
+    chip.textContent = text;
+    chip.onclick = () => {
+      container.remove();
+      inputEl.value = text;
+      sendMessage();
+    };
+    container.appendChild(chip);
+  });
+
+  messagesEl.appendChild(container);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
 // Init
-addMessage("Open Finance Chatbot ready. Type a message to begin.", "system");
+addMessage("Hi there! 👋 I'm your Open Finance assistant. I can help you connect bank accounts, view transactions, and analyze your financial data. How can I help you today?", "assistant");
+showSuggestions();
 inputEl.focus();
 </script>
 </body>
