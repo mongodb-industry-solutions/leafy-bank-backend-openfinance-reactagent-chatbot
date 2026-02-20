@@ -6,10 +6,12 @@ from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel
+
+from streaming import sse_event, process_stream_event, extract_final_response
 
 from api_checkpointer import router as checkpointer_router
 from graph import get_checkpointer, build_graph
@@ -154,4 +156,110 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
         thread_id=request.thread_id,
         response=response_text,
         interrupt=interrupt_data,
+    )
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest, fastapi_request: Request):
+    """Stream intermediate agent steps via SSE."""
+    thread_id = request.thread_id or str(uuid.uuid4())
+    agent = fastapi_request.app.state.agent
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": request.user_id,
+        }
+    }
+
+    async def event_generator():
+        yield sse_event("thread_id", {"thread_id": thread_id})
+
+        try:
+            async for event in agent.astream(
+                {"messages": [HumanMessage(content=request.message)]},
+                config,
+                stream_mode="updates",
+                subgraphs=True,
+            ):
+                for sse in process_stream_event(event):
+                    yield sse
+
+            # Extract final response and interrupt after stream completes
+            response_text, interrupt_data = await extract_final_response(
+                agent, config
+            )
+
+            if response_text:
+                yield sse_event("response", {"text": response_text})
+
+            if interrupt_data:
+                yield sse_event("interrupt", interrupt_data)
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield sse_event("error", {"message": str(e)})
+
+        yield sse_event("done", {})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/chat/stream/resume")
+async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
+    """Stream after resuming from an interrupt (e.g., bank login)."""
+    agent = fastapi_request.app.state.agent
+
+    config = {
+        "configurable": {
+            "thread_id": request.thread_id,
+            "user_id": request.user_id,
+        }
+    }
+
+    async def event_generator():
+        yield sse_event("thread_id", {"thread_id": request.thread_id})
+
+        try:
+            async for event in agent.astream(
+                Command(resume=request.resume_data),
+                config,
+                stream_mode="updates",
+                subgraphs=True,
+            ):
+                for sse in process_stream_event(event):
+                    yield sse
+
+            response_text, interrupt_data = await extract_final_response(
+                agent, config
+            )
+
+            if response_text:
+                yield sse_event("response", {"text": response_text})
+
+            if interrupt_data:
+                yield sse_event("interrupt", interrupt_data)
+
+        except Exception as e:
+            logger.error(f"Stream resume error: {e}", exc_info=True)
+            yield sse_event("error", {"message": str(e)})
+
+        yield sse_event("done", {})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
