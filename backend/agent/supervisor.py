@@ -101,6 +101,65 @@ async def supervisor_node(state: dict) -> dict:
                 f"Supervisor detected approved consent: {found_id}, purpose: {found_purpose}"
             )
 
+    # Hard guard: when consent was just approved, always pause and confirm
+    # with the user before routing to analysis. This is deterministic — the
+    # LLM cannot skip this step.
+    if newly_approved:
+        # If the consent agent already responded (e.g. with verification
+        # summary from verify_consent_data), preserve its message — just
+        # set state and FINISH. Only generate a fallback confirmation if
+        # the consent agent didn't produce a response.
+        last_msg = messages[-1] if messages else None
+        if (
+            last_msg
+            and hasattr(last_msg, "type")
+            and last_msg.type == "ai"
+            and last_msg.content
+        ):
+            logger.info(
+                "Supervisor: consent just approved, consent agent already "
+                "responded — preserving its message"
+            )
+            return {
+                "next": "FINISH",
+                "active_consent_id": active_consent_id,
+                "active_consent_purpose": active_consent_purpose,
+            }
+
+        # Fallback: consent agent didn't respond (edge case) — generate
+        # a confirmation message so the user always sees one.
+        if "LOAN_PORTABILITY" in (active_consent_purpose or "").upper():
+            analysis_desc = (
+                "I can now analyze your external bank data to evaluate loan "
+                "portability — this checks your spending patterns, credit score, "
+                "and finds better Leafy Bank rates."
+            )
+        elif (active_consent_purpose or "").upper() == "FINANCIAL_ADVICE":
+            analysis_desc = (
+                "I can now analyze your spending across all your accounts, "
+                "compare against best practices, and provide a financial "
+                "overview with personalized recommendations."
+            )
+        else:
+            analysis_desc = (
+                "I can now analyze your financial data from the connected "
+                "bank and provide insights."
+            )
+
+        confirmation_msg = (
+            f"Your consent is now active! Your data from the external bank "
+            f"is securely connected.\n\n"
+            f"{analysis_desc}\n\n"
+            f"Would you like me to proceed with the analysis?"
+        )
+        logger.info("Supervisor: consent just approved, pausing for user confirmation (fallback)")
+        return {
+            "next": "FINISH",
+            "active_consent_id": active_consent_id,
+            "active_consent_purpose": active_consent_purpose,
+            "messages": [AIMessage(content=confirmation_msg)],
+        }
+
     # Quick exit: if the last message is from a sub-agent (AI) and no consent
     # was just approved, route to FINISH so the user sees the response.
     # This prevents looping (supervisor → agent → supervisor → agent ...).

@@ -250,3 +250,142 @@ async def revoke_consent(consent_id: str, config: RunnableConfig) -> str:
     except Exception as e:
         logger.error(f"Error revoking consent: {e}")
         return f"Error revoking consent: {str(e)}"
+
+
+@tool
+async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
+    """Verify what data is accessible after consent approval. Returns a summary with
+    counts and key values for each data category (accounts, loans, transactions,
+    repayment history, customer identification).
+
+    Use this after a consent is approved to confirm data access and show the user
+    exactly what was received vs what was not.
+
+    WARNING: For one-time consents (duration = 0), calling this will consume the
+    consent. Only use with duration-based consents (duration > 0).
+
+    Args:
+        consent_id: The approved consent ID to verify data access for
+    """
+    user_id = config["configurable"]["user_id"]
+    try:
+        token = await get_bearer_token(user_id)
+        response = await http_client.get(
+            f"/openfinance/secure/customers/{user_id}/external-data",
+            params={"consent_id": consent_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        summary = {"consent_id": consent_id, "data_received": {}}
+
+        # Accounts
+        accounts = data.get("accounts")
+        if accounts:
+            summary["data_received"]["accounts"] = {
+                "received": True,
+                "count": len(accounts),
+                "details": [
+                    {
+                        "type": a.get("AccountType", "unknown"),
+                        "sub_type": a.get("AccountSubType"),
+                        "balance": a.get("AccountBalance"),
+                        "currency": a.get("Currency", "BRL"),
+                    }
+                    for a in accounts
+                ],
+            }
+        else:
+            summary["data_received"]["accounts"] = {"received": False}
+
+        # Products (loans)
+        products = data.get("products")
+        if products:
+            summary["data_received"]["products"] = {
+                "received": True,
+                "count": len(products),
+                "details": [
+                    {
+                        "type": p.get("ProductType", "unknown"),
+                        "sub_type": p.get("ProductSubType"),
+                        "outstanding_balance": p.get("ProductOutstandingBalance")
+                        or p.get("OutstandingAmount"),
+                        "interest_rate": p.get("ProductInterestRate")
+                        or p.get("InterestRate"),
+                    }
+                    for p in products
+                ],
+            }
+        else:
+            summary["data_received"]["products"] = {"received": False}
+
+        # Transactions
+        transactions = data.get("transactions")
+        if transactions:
+            dates = []
+            debit_count = 0
+            credit_count = 0
+            for t in transactions:
+                txn_date = t.get("TransactionDate") or t.get("TransactionDateTime")
+                if txn_date:
+                    dates.append(str(txn_date))
+                txn_type = t.get("TransactionCreditDebitType") or t.get(
+                    "TransactionType", ""
+                )
+                if txn_type == "DEBIT":
+                    debit_count += 1
+                elif txn_type == "CREDIT":
+                    credit_count += 1
+            dates.sort()
+            txn_info = {
+                "received": True,
+                "count": len(transactions),
+                "debit_count": debit_count,
+                "credit_count": credit_count,
+            }
+            if dates:
+                txn_info["date_range"] = {
+                    "earliest": dates[0],
+                    "latest": dates[-1],
+                }
+            summary["data_received"]["transactions"] = txn_info
+        else:
+            summary["data_received"]["transactions"] = {"received": False}
+
+        # Repayment history
+        repayment = data.get("repayment_history")
+        if repayment:
+            summary["data_received"]["repayment_history"] = {
+                "received": True,
+                "count": len(repayment),
+            }
+        else:
+            summary["data_received"]["repayment_history"] = {"received": False}
+
+        # Customer identification (KYC)
+        kyc = data.get("customer_identification")
+        if kyc:
+            summary["data_received"]["customer_identification"] = {
+                "received": True,
+            }
+        else:
+            summary["data_received"]["customer_identification"] = {"received": False}
+
+        # Build not_received list
+        not_received = [
+            category
+            for category, info in summary["data_received"].items()
+            if not info.get("received")
+        ]
+        if not_received:
+            summary["not_received"] = not_received
+
+        return json.dumps(summary)
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error verifying consent data: {e.response.text}")
+        return f"Error verifying consent data: {e.response.json().get('detail', str(e))}"
+    except Exception as e:
+        logger.error(f"Error verifying consent data: {e}")
+        return f"Error verifying consent data: {str(e)}"
