@@ -1,17 +1,26 @@
+# Staging environment configuration for openfinance-chatbot
+# Deployed via: push to 'staging' branch
+
+# Non-sensitive environment variables (injected directly)
 env:
   NODE_ENV: staging
+  APP_NAME: openfinance-chatbot
+  AWS_REGION: us-east-1
+  CHAT_COMPLETIONS_MODEL_ID: us.anthropic.claude-sonnet-4-20250514-v1:0
+  CHECKPOINTS_AIO_COLLECTION: checkpoints_aio
+  CHECKPOINTS_WRITES_AIO_COLLECTION: checkpoint_writes_aio
+  # Internal K8s service URL for the Open Finance backend
+  # Format: http://<release-name>-web-app:80
+  OPEN_FINANCE_API_URL: http://open-finance-next-gen-web-app:80
 
+# Sensitive values loaded from Kubernetes secrets
+# The value is the K8s secret name containing the key
+# Create with: helm ksec set openfinance-chatbot MONGODB_URI="..." DATABASE_NAME="..."
 envSecrets:
   MONGODB_URI: openfinance-chatbot
   DATABASE_NAME: openfinance-chatbot
-  APP_NAME: openfinance-chatbot
-  AWS_REGION: openfinance-chatbot
-  CHAT_COMPLETIONS_MODEL_ID: openfinance-chatbot
-  CHECKPOINTS_AIO_COLLECTION: openfinance-chatbot
-  CHECKPOINTS_WRITES_AIO_COLLECTION: openfinance-chatbot
-  OPEN_FINANCE_API_URL: openfinance-chatbot
-  NODE_ENV: openfinance-chatbot
 
+# AWS IRSA for Bedrock access
 serviceAccount:
   enabled: true
   irsa:
