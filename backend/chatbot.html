@@ -504,15 +504,30 @@ function formatAgentName(name) {
 function showInterrupt(data) {
   const box = document.createElement("div");
   box.className = "interrupt-box";
+  box.dataset.interruptType = data.type || "unknown";
   const payload = JSON.stringify(data, null, 2);
-  box.innerHTML = `
-    <h4>Interrupt — Action Required</h4>
-    <pre>${escapeHtml(payload)}</pre>
-    <div class="actions">
-      <button class="btn-resume" onclick="resumeInterrupt(this)">Resume (simulate success)</button>
-      <button class="btn-cancel" onclick="this.closest('.interrupt-box').remove()">Dismiss</button>
-    </div>
-  `;
+
+  if (data.type === "CONSENT_APPROVAL") {
+    box.innerHTML = `
+      <h4>Consent Approval Required</h4>
+      <p style="color:#ccc;font-size:13px;margin-bottom:10px;">${escapeHtml(data.message || "Do you approve this data-sharing consent?")}</p>
+      <pre>${escapeHtml(payload)}</pre>
+      <div class="actions">
+        <button class="btn-resume" onclick="resumeInterrupt(this, true)">Approve Consent</button>
+        <button class="btn-cancel" onclick="resumeInterrupt(this, false)">Decline</button>
+      </div>
+    `;
+  } else {
+    box.innerHTML = `
+      <h4>Interrupt — Action Required</h4>
+      <pre>${escapeHtml(payload)}</pre>
+      <div class="actions">
+        <button class="btn-resume" onclick="resumeInterrupt(this, true)">Resume (simulate success)</button>
+        <button class="btn-cancel" onclick="this.closest('.interrupt-box').remove()">Dismiss</button>
+      </div>
+    `;
+  }
+
   messagesEl.appendChild(box);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -780,8 +795,9 @@ async function sendMessage() {
   }
 }
 
-async function resumeInterrupt(btn) {
+async function resumeInterrupt(btn, approved) {
   const box = btn.closest(".interrupt-box");
+  const interruptType = box.dataset.interruptType;
   const userId = document.getElementById("user-id").value.trim();
 
   if (!threadId) {
@@ -789,11 +805,22 @@ async function resumeInterrupt(btn) {
     return;
   }
 
+  // Build resume_data based on interrupt type
+  let resumeData;
+  let stepLabel;
+  if (interruptType === "CONSENT_APPROVAL") {
+    resumeData = { approved: approved };
+    stepLabel = approved ? "Approving consent..." : "Declining consent...";
+  } else {
+    resumeData = { status: "success" };
+    stepLabel = "Resuming after bank login...";
+  }
+
   box.remove();
   sending = true;
   sendBtn.disabled = true;
   setStatus("Resuming...");
-  showStepIndicator("Resuming after bank login...");
+  showStepIndicator(stepLabel);
 
   try {
     const res = await fetch(API_BASE + "/chat/stream/resume", {
@@ -802,7 +829,7 @@ async function resumeInterrupt(btn) {
       body: JSON.stringify({
         thread_id: threadId,
         user_id: userId,
-        resume_data: { status: "success" },
+        resume_data: resumeData,
       }),
     });
 

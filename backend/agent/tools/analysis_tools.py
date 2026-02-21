@@ -380,10 +380,25 @@ def _categorize_internal_transactions(
     return category_totals, total_spending, uncategorized
 
 
+def _normalize_external_transaction(txn: dict) -> dict:
+    """Normalize an ISO 20022-aligned external transaction to a flat working format."""
+    return {
+        "amount": txn.get("Amt", {}).get("value", 0),
+        "currency": txn.get("Amt", {}).get("Ccy", "USD"),
+        "direction": txn.get("CdtDbtInd", ""),
+        "description": txn.get("AddtlNtryInf", ""),
+        "merchant_name": txn.get("Cdtr", {}).get("Nm", ""),
+        "mcc": txn.get("BkTxCd", {}).get("Prtry", {}).get("Cd", ""),
+        "bank": txn.get("Acct", {}).get("Svcr", ""),
+        "date": txn.get("BookgDt"),
+        "purpose": txn.get("Purp", {}).get("Cd", ""),
+    }
+
+
 def _categorize_external_transactions(
     transactions: list[dict], mcc_map: dict[str, dict]
 ) -> tuple[dict[str, float], float, list[dict]]:
-    """Categorize external bank transactions by MCC.
+    """Categorize external bank transactions (ISO 20022 format) by MCC.
 
     Returns (category_totals, total_spending, uncategorized_list).
     """
@@ -392,27 +407,26 @@ def _categorize_external_transactions(
     total_spending = 0.0
 
     for txn in transactions:
-        txn_type = txn.get("TransactionType", "")
+        norm = _normalize_external_transaction(txn)
 
         # Skip CREDIT (income)
-        if txn_type != "DEBIT":
+        if norm["direction"] != "DBIT":
             continue
 
-        amount = txn.get("TransactionAmount", 0)
+        amount = norm["amount"]
         total_spending += amount
 
-        merchant = txn.get("TransactionMerchant", {})
-        mcc = merchant.get("MCC", "")
+        mcc = norm["mcc"]
         if mcc and mcc in mcc_map:
             cat_id = mcc_map[mcc]["CategoryId"]
             category_totals[cat_id] = category_totals.get(cat_id, 0) + amount
         else:
             uncategorized.append({
-                "description": txn.get("TransactionDescription", ""),
+                "description": norm["description"],
                 "amount": amount,
-                "merchant": merchant.get("MerchantName", ""),
+                "merchant": norm["merchant_name"],
                 "mcc": mcc,
-                "bank": txn.get("TransactionBank", ""),
+                "bank": norm["bank"],
             })
 
     return category_totals, total_spending, uncategorized

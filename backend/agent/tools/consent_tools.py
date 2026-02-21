@@ -193,11 +193,41 @@ async def request_bank_login(consent_id: str, institution_name: str) -> str:
 
 @tool
 async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
-    """Approve a consent that is in AWAITING_AUTHORISATION status. Only call this after the user explicitly confirms approval.
+    """Approve a consent that is in AWAITING_AUTHORISATION status. This will pause the conversation and ask the user for explicit approval before proceeding.
 
     Args:
         consent_id: The consent ID to approve
     """
+    # Fetch consent details so the interrupt shows what the user is approving
+    interrupt_payload = {
+        "type": "CONSENT_APPROVAL",
+        "consent_id": consent_id,
+        "message": "Please review and confirm that you approve this data-sharing consent.",
+    }
+    try:
+        response = await http_client.get(f"/openfinance/secure/consents/{consent_id}")
+        response.raise_for_status()
+        data = response.json()
+        consent = data.get("consent", data)
+        interrupt_payload["permissions"] = consent.get("Permissions", [])
+        interrupt_payload["purpose"] = consent.get("Purpose")
+        interrupt_payload["source_institution"] = (
+            consent.get("SourceInstitution", {}).get("InstitutionName")
+        )
+        interrupt_payload["expiration"] = consent.get("ExpirationDateTime")
+    except Exception as e:
+        logger.warning(f"Could not fetch consent details for interrupt: {e}")
+
+    # Hard interrupt — requires explicit human approval before consent is granted
+    approval = interrupt(interrupt_payload)
+
+    if not approval.get("approved"):
+        return json.dumps({
+            "consent_id": consent_id,
+            "status": "AWAITING_AUTHORISATION",
+            "message": "User declined consent approval. Consent was NOT approved.",
+        })
+
     user_id = config["configurable"]["user_id"]
     try:
         token = await get_bearer_token(user_id)
@@ -320,22 +350,20 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
         else:
             summary["data_received"]["products"] = {"received": False}
 
-        # Transactions
+        # Transactions (ISO 20022-aligned format)
         transactions = data.get("transactions")
         if transactions:
             dates = []
             debit_count = 0
             credit_count = 0
             for t in transactions:
-                txn_date = t.get("TransactionDate") or t.get("TransactionDateTime")
+                txn_date = t.get("BookgDt") or t.get("TransactionDate")
                 if txn_date:
                     dates.append(str(txn_date))
-                txn_type = t.get("TransactionCreditDebitType") or t.get(
-                    "TransactionType", ""
-                )
-                if txn_type == "DEBIT":
+                txn_type = t.get("CdtDbtInd") or t.get("TransactionType", "")
+                if txn_type in ("DBIT", "DEBIT"):
                     debit_count += 1
-                elif txn_type == "CREDIT":
+                elif txn_type in ("CRDT", "CREDIT"):
                     credit_count += 1
             dates.sort()
             txn_info = {

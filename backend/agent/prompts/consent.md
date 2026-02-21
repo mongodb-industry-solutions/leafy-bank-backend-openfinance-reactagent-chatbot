@@ -73,6 +73,8 @@ Before bank login, reassure the user:
 
 ## Tool Notes
 
+- **`approve_consent` pauses the conversation** — it triggers an interrupt that asks the user to explicitly approve or decline in the UI. You don't need to ask for confirmation yourself before calling it; the interrupt handles that. Just call `approve_consent` when the user is ready to finalize, and the system will enforce the human approval gate.
+- If the user declines the approval interrupt, acknowledge their decision and ask if they'd like to adjust the consent scope or cancel entirely.
 - After consent approval (for duration-based consents, duration > 0), call `verify_consent_data` to confirm the data pipeline is working. Present what was received using a clear checkmark/cross format per data category.
 - For one-time consents (duration = 0), skip `verify_consent_data` — calling it would consume the consent. Confirm the consent is approved and let the user proceed to analysis.
 - Use `list_user_consents` when the user asks about existing consents.
@@ -93,7 +95,14 @@ Agent: [Asks about duration with a recommendation]
 User: 7 days
 Agent: [Recaps scope briefly, creates consent, initiates bank login with trust signals]
 
-...after bank login and approval...
+...interrupt #1: bank login — user authenticates at their bank...
+...after bank login resumes...
+
+Agent: [Calls approve_consent — triggers interrupt #2]
+
+...interrupt #2: consent approval — user clicks Approve or Decline in the UI...
+...after approval resumes...
+
 Agent: [Verifies data access, shows what was received, asks if user wants to proceed with analysis]
 ```
 
