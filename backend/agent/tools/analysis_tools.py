@@ -15,16 +15,12 @@ from agent.tools.auth import get_bearer_token
 logger = logging.getLogger(__name__)
 
 
-# ---------- Tool 1: fetch_external_data ----------
+# ---------- Internal helper: fetch_external_data ----------
+# Not exposed as a tool — calculate_spending_score handles this.
 
 
-@tool
 async def fetch_external_data(consent_id: str, config: RunnableConfig) -> str:
-    """Fetch all external bank data authorized by a consent. Returns accounts, loans, transactions, repayment history, and customer identification depending on consent permissions.
-
-    Args:
-        consent_id: The consent ID authorizing data retrieval
-    """
+    """Fetch all external bank data authorized by a consent. Returns accounts, loans, transactions, repayment history, and customer identification depending on consent permissions."""
     user_id = config["configurable"]["user_id"]
     try:
         token = await get_bearer_token(user_id)
@@ -43,10 +39,10 @@ async def fetch_external_data(consent_id: str, config: RunnableConfig) -> str:
         return f"Error fetching external data: {str(e)}"
 
 
-# ---------- Tool 2: fetch_spending_transactions ----------
+# ---------- Internal helper: fetch_spending_transactions ----------
+# Not exposed as a tool — calculate_spending_score handles this.
 
 
-@tool
 async def fetch_spending_transactions(config: RunnableConfig) -> str:
     """Fetch ALL transactions for spending analysis. Includes both sent (DEBIT) and received (CREDIT) transactions."""
     user_id = config["configurable"]["user_id"]
@@ -61,10 +57,10 @@ async def fetch_spending_transactions(config: RunnableConfig) -> str:
         return f"Error fetching spending transactions: {str(e)}"
 
 
-# ---------- Tool 3: get_spending_best_practices ----------
+# ---------- Internal helper: get_spending_best_practices ----------
+# Not exposed as a tool — calculate_spending_score handles this.
 
 
-@tool
 async def get_spending_best_practices() -> str:
     """Get reference data for spending categories with ideal percentage ranges and MCC codes. Use this to categorize transactions and evaluate spending health."""
     try:
@@ -113,22 +109,50 @@ async def get_underwriting_rules() -> str:
 
 # ---------- Tool 6: find_matching_products ----------
 
+# Maps consent purpose → expected loan sub-type for portability validation
+_PURPOSE_TO_LOAN_TYPE = {
+    "PERSONAL_LOAN_PORTABILITY": "Personal",
+    "PAYROLL_LOAN_PORTABILITY": "PayrollDeductible",
+    "VEHICLE_LOAN_PORTABILITY": "Vehicle",
+}
+
 
 @tool
 async def find_matching_products(
     product_type: str,
     current_rate: float,
+    consent_purpose: str,
+    loan_sub_type: str,
     current_amount: Optional[float] = None,
-    loan_sub_type: Optional[str] = None,
 ) -> str:
     """Find Leafy Bank products with better rates than the user's current product.
+
+    Validates that the loan sub-type from the external data matches the consent
+    purpose before searching. Returns a validation error if they don't match.
 
     Args:
         product_type: Product type to match (Loan or CreditCard)
         current_rate: User's current interest rate to beat
+        consent_purpose: The consent purpose (e.g. PERSONAL_LOAN_PORTABILITY)
+        loan_sub_type: Loan sub-type from external data (Personal, PayrollDeductible, or Vehicle)
         current_amount: Loan amount for eligibility check
-        loan_sub_type: Loan sub-type (Personal, PayrollDeductible, or Vehicle)
     """
+    # Validate loan type matches consent purpose
+    expected_type = _PURPOSE_TO_LOAN_TYPE.get(consent_purpose)
+    if expected_type and loan_sub_type and loan_sub_type != expected_type:
+        return json.dumps({
+            "status": "loan_type_mismatch",
+            "consent_purpose": consent_purpose,
+            "expected_loan_type": expected_type,
+            "actual_loan_type": loan_sub_type,
+            "message": (
+                f"The consent purpose is {consent_purpose} (expects {expected_type} loans), "
+                f"but the external loan is {loan_sub_type}. These are different loan types — "
+                f"comparing them would produce misleading results. "
+                f"Ask the user how they'd like to proceed."
+            ),
+        })
+
     try:
         params = {
             "product_type": product_type,
@@ -136,7 +160,7 @@ async def find_matching_products(
         }
         if current_amount is not None:
             params["current_amount"] = current_amount
-        if loan_sub_type is not None:
+        if loan_sub_type:
             params["loan_sub_type"] = loan_sub_type
 
         response = await http_client.get(
@@ -169,82 +193,77 @@ async def fetch_internal_accounts(config: RunnableConfig) -> str:
         return f"Error fetching internal accounts: {str(e)}"
 
 
-# ---------- Tool 8: calculate_total_balance ----------
+# ---------- Tool 8: calculate_financial_position ----------
 
 
 @tool
-async def calculate_total_balance(
+async def calculate_financial_position(
     user_object_id: str,
     consent_id: str,
     config: RunnableConfig,
     connected_external_accounts: Optional[list[str]] = None,
+    connected_external_products: Optional[list[str]] = None,
 ) -> str:
-    """Calculate the user's aggregated balance across all internal and external accounts.
+    """Calculate the user's total balance and total debt in a single call. Returns both aggregated balance (across all internal and external accounts) and aggregated debt (across all internal and external products). Used for DTI ratio in portability evaluation and financial overview.
 
     Args:
         user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
-        consent_id: The consent ID with ACCOUNTS_BALANCES_READ permission
+        consent_id: The consent ID with ACCOUNTS_BALANCES_READ and LOANS_READ permissions
         connected_external_accounts: List of external account IDs to include (from external_data.accounts)
+        connected_external_products: List of external product IDs to include (from external_data.products)
     """
     user_id = config["configurable"]["user_id"]
     try:
         token = await get_bearer_token(user_id)
-        response = await http_client.post(
+        headers = {"Authorization": f"Bearer {token}"}
+
+        balance_task = http_client.post(
             "/openfinance/secure/calculate-total-balance-for-user/",
             json={
                 "user_id": user_object_id,
                 "connected_external_accounts": connected_external_accounts or [],
                 "consent_id": consent_id,
             },
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
         )
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Error calculating total balance: {e.response.text}")
-        return f"Error calculating total balance: {e.response.json().get('detail', str(e))}"
-    except Exception as e:
-        logger.error(f"Error calculating total balance: {e}")
-        return f"Error calculating total balance: {str(e)}"
-
-
-# ---------- Tool 9: calculate_total_debt ----------
-
-
-@tool
-async def calculate_total_debt(
-    user_object_id: str,
-    consent_id: str,
-    config: RunnableConfig,
-    connected_external_products: Optional[list[str]] = None,
-) -> str:
-    """Calculate the user's aggregated debt across all internal and external products. Used for DTI ratio in portability evaluation.
-
-    Args:
-        user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
-        consent_id: The consent ID with LOANS_READ permission
-        connected_external_products: List of external product IDs to include (from external_data.products)
-    """
-    user_id = config["configurable"]["user_id"]
-    try:
-        token = await get_bearer_token(user_id)
-        response = await http_client.post(
+        debt_task = http_client.post(
             "/openfinance/secure/calculate-total-debt-for-user/",
             json={
                 "user_id": user_object_id,
                 "connected_external_products": connected_external_products or [],
                 "consent_id": consent_id,
             },
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
         )
-        response.raise_for_status()
-        return json.dumps(response.json())
+
+        balance_resp, debt_resp = await asyncio.gather(
+            balance_task, debt_task, return_exceptions=True
+        )
+
+        result = {}
+
+        if isinstance(balance_resp, Exception):
+            logger.error(f"Error calculating total balance: {balance_resp}")
+            result["balance_error"] = str(balance_resp)
+        else:
+            balance_resp.raise_for_status()
+            result["total_balance"] = balance_resp.json()
+
+        if isinstance(debt_resp, Exception):
+            logger.error(f"Error calculating total debt: {debt_resp}")
+            result["debt_error"] = str(debt_resp)
+        else:
+            debt_resp.raise_for_status()
+            result["total_debt"] = debt_resp.json()
+
+        return json.dumps(result)
+
     except httpx.HTTPStatusError as e:
-        logger.error(f"Error calculating total debt: {e.response.text}")
-        return f"Error calculating total debt: {e.response.json().get('detail', str(e))}"
+        logger.error(f"Error calculating financial position: {e.response.text}")
+        return f"Error calculating financial position: {e.response.json().get('detail', str(e))}"
     except Exception as e:
-        logger.error(f"Error calculating total debt: {e}")
-        return f"Error calculating total debt: {str(e)}"
+        logger.error(f"Error calculating financial position: {e}")
+        return f"Error calculating financial position: {str(e)}"
 
 
 # ---------- Tool 10: fetch_customer_identification ----------
@@ -456,9 +475,7 @@ def _calculate_score(
 
 @tool
 async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> str:
-    """Calculate a spending health score (0-100) by analyzing ALL transactions from both Leafy Bank (internal) and external banks. Categorizes every transaction by MCC code against spending best practices. Returns the score, per-category breakdown, and full external data (accounts, loans, etc.) so you do not need to call fetch_external_data separately.
-
-    IMPORTANT: This tool consumes the external data consent. Do NOT call fetch_external_data after using this tool — all external data is included in the response.
+    """Calculate a spending health score (0-100) by analyzing ALL transactions from both Leafy Bank (internal) and external banks. Categorizes every transaction by MCC code against spending best practices. Returns the score, per-category breakdown, and full external data (accounts, loans, etc.).
 
     Args:
         consent_id: The consent ID authorizing external data retrieval

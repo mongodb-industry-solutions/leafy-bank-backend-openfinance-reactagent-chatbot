@@ -128,7 +128,8 @@ async def chat(request: ChatRequest, fastapi_request: Request):
 
     return ChatResponse(
         thread_id=thread_id,
-        response=response_text,
+        # When interrupted, response_text is stale (from a prior turn) — clear it
+        response="" if interrupt_data else response_text,
         interrupt=interrupt_data,
     )
 
@@ -154,7 +155,7 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
 
     return ChatResponse(
         thread_id=request.thread_id,
-        response=response_text,
+        response="" if interrupt_data else response_text,
         interrupt=interrupt_data,
     )
 
@@ -190,11 +191,13 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 agent, config
             )
 
-            if response_text:
-                yield sse_event("response", {"text": response_text})
-
+            # Mutually exclusive: an interrupt means the agent hasn't finished,
+            # so any response_text is stale (from a prior turn). The real
+            # response will come after the interrupt is resumed.
             if interrupt_data:
                 yield sse_event("interrupt", interrupt_data)
+            elif response_text:
+                yield sse_event("response", {"text": response_text})
 
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
@@ -242,11 +245,10 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 agent, config
             )
 
-            if response_text:
-                yield sse_event("response", {"text": response_text})
-
             if interrupt_data:
                 yield sse_event("interrupt", interrupt_data)
+            elif response_text:
+                yield sse_event("response", {"text": response_text})
 
         except Exception as e:
             logger.error(f"Stream resume error: {e}", exc_info=True)

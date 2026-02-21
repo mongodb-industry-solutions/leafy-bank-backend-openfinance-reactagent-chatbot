@@ -8,15 +8,11 @@ from langchain_aws import ChatBedrockConverse
 
 from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
 from agent.tools.analysis_tools import (
-    fetch_external_data,
-    fetch_spending_transactions,
-    get_spending_best_practices,
     fetch_credit_score,
     get_underwriting_rules,
     find_matching_products,
     fetch_internal_accounts,
-    calculate_total_balance,
-    calculate_total_debt,
+    calculate_financial_position,
     fetch_customer_identification,
     find_user,
     calculate_spending_score,
@@ -28,18 +24,14 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "analysis.md"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
 TOOLS = [
+    find_user,
     calculate_spending_score,
-    fetch_external_data,
-    fetch_spending_transactions,
-    get_spending_best_practices,
+    fetch_customer_identification,
     fetch_credit_score,
     get_underwriting_rules,
     find_matching_products,
     fetch_internal_accounts,
-    calculate_total_balance,
-    calculate_total_debt,
-    fetch_customer_identification,
-    find_user,
+    calculate_financial_position,
 ]
 
 
