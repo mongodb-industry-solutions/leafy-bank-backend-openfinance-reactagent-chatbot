@@ -87,6 +87,71 @@
 
   .controls button:hover { border-color: #00ed64; color: #00ed64; }
 
+  .demo-controls {
+    background: #001e2b;
+    border-bottom: 1px solid #1a3a4a;
+    padding: 8px 20px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  .demo-controls label { color: #889397; }
+
+  .demo-controls select {
+    background: #0f1923;
+    border: 1px solid #1a3a4a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: #e8eddf;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .demo-controls select:focus { outline: none; border-color: #00ed64; }
+
+  .demo-controls button {
+    background: none;
+    border: 1px solid #1a3a4a;
+    border-radius: 4px;
+    color: #889397;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .demo-controls button:hover { border-color: #00ed64; color: #00ed64; }
+
+  .demo-controls .btn-load {
+    border-color: #00ed64;
+    color: #00ed64;
+  }
+
+  .demo-controls .btn-load:hover {
+    background: #00ed64;
+    color: #001e2b;
+  }
+
+  .demo-controls .btn-clear {
+    border-color: #ff6f61;
+    color: #ff6f61;
+  }
+
+  .demo-controls .btn-clear:hover {
+    background: #ff6f61;
+    color: #001e2b;
+  }
+
+  .demo-controls .status-text {
+    color: #889397;
+    font-size: 12px;
+    margin-left: auto;
+  }
+
+  .demo-controls .status-text.success { color: #00ed64; }
+  .demo-controls .status-text.error { color: #ff6f61; }
+
   #chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -445,6 +510,23 @@
   <button onclick="newThread()">New Thread</button>
 </div>
 
+<div class="demo-controls">
+  <label>Spending Profile:</label>
+  <select id="scenario-user" onchange="onScenarioUserChange()">
+    <option value="fridaklo">fridaklo (Green Bank)</option>
+    <option value="hellyrig">hellyrig (NeoFinance)</option>
+  </select>
+  <input type="text" id="scenario-user-id" value="65a546ae4a8f64e8f88fb89e" style="width:220px;font-size:11px;" title="User ObjectId" />
+  <select id="scenario-type">
+    <option value="overspender">Overspender</option>
+    <option value="balanced">Balanced</option>
+    <option value="saver">Saver</option>
+  </select>
+  <button class="btn-load" onclick="loadScenario()">Load</button>
+  <button class="btn-clear" onclick="clearScenario()">Clear</button>
+  <span class="status-text" id="scenario-status"></span>
+</div>
+
 <div id="chat-messages"></div>
 
 <div id="input-area">
@@ -455,6 +537,8 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 const API_BASE = window.location.origin;
+// Open Finance backend for demo scenario management (port 8003)
+const OF_API_BASE = "http://localhost:8003";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -858,9 +942,9 @@ async function resumeInterrupt(btn, approved) {
 
 function showSuggestions() {
   const suggestions = [
+    "I want to port my vehicle loan to a better rate",
+    "I want to port my payroll deductible loan to a better rate",
     "I want to port my personal loan to a better rate",
-    "Compare my current loan with offers from other banks",
-    "What documents do I need for loan portability?",
     "Show me my existing loan details",
   ];
 
@@ -884,9 +968,86 @@ function showSuggestions() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+// ── Scenario Management ──
+
+const USER_IDS = {
+  fridaklo: "65a546ae4a8f64e8f88fb89e",
+  hellyrig: "67a8c3de4b9f52d1a33ec701",
+};
+
+const scenarioStatusEl = document.getElementById("scenario-status");
+
+function setScenarioStatus(msg, cls = "") {
+  scenarioStatusEl.textContent = msg;
+  scenarioStatusEl.className = "status-text" + (cls ? " " + cls : "");
+}
+
+function onScenarioUserChange() {
+  const userName = document.getElementById("scenario-user").value;
+  document.getElementById("scenario-user-id").value = USER_IDS[userName] || "";
+}
+
+async function loadScenario() {
+  const userName = document.getElementById("scenario-user").value;
+  const scenarioName = document.getElementById("scenario-type").value;
+  setScenarioStatus("Loading...");
+
+  try {
+    const res = await fetch(
+      `${OF_API_BASE}/api/v1/demo/scenarios/${scenarioName}?user_name=${userName}`,
+      { method: "POST" }
+    );
+    const data = await res.json();
+    if (data.error) {
+      setScenarioStatus(data.error, "error");
+    } else {
+      setScenarioStatus(`${data.loaded} txns loaded for ${userName} (${scenarioName})`, "success");
+      // Sync chatbot User ID with scenario user
+      document.getElementById("user-id").value = userName;
+    }
+  } catch (e) {
+    setScenarioStatus("Failed: " + e.message, "error");
+  }
+}
+
+async function clearScenario() {
+  const userName = document.getElementById("scenario-user").value;
+  setScenarioStatus("Clearing...");
+
+  try {
+    const res = await fetch(
+      `${OF_API_BASE}/api/v1/demo/scenarios?user_name=${userName}`,
+      { method: "DELETE" }
+    );
+    const data = await res.json();
+    if (data.error) {
+      setScenarioStatus(data.error, "error");
+    } else {
+      setScenarioStatus(`Cleared ${data.cleared} variable txns for ${userName}`, "success");
+    }
+  } catch (e) {
+    setScenarioStatus("Failed: " + e.message, "error");
+  }
+}
+
+async function fetchScenarioStatus() {
+  try {
+    const res = await fetch(`${OF_API_BASE}/api/v1/demo/scenarios`);
+    const data = await res.json();
+    if (data.variable_transactions > 0) {
+      setScenarioStatus(`${data.variable_transactions} variable txns ($${data.variable_total_amount})`, "success");
+    } else {
+      setScenarioStatus("No variable txns loaded");
+    }
+  } catch (e) {
+    setScenarioStatus("OF backend offline", "error");
+  }
+}
+
 // ── Init ──
 addMessage("Hi there! 👋 I'm your Open Finance assistant. I can help you connect bank accounts, view transactions, and analyze your financial data. How can I help you today?", "assistant");
 showSuggestions();
+fetchScenarioStatus();
 inputEl.focus();
 </script>
 </body>
