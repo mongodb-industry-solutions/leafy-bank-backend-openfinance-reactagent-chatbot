@@ -579,3 +579,103 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
     except Exception as e:
         logger.error(f"Error calculating spending score: {e}")
         return f"Error calculating spending score: {str(e)}"
+
+
+# ---------- Tool: classify_transactions ----------
+
+
+@tool
+async def classify_transactions(uncategorized_transactions: list[dict]) -> str:
+    """Classify uncategorized transactions using MongoDB Atlas Vector Search against MCC reference codes. Takes the uncategorized_transactions list from calculate_spending_score and returns each transaction with its matched MCC code, spending category, and confidence score.
+
+    Args:
+        uncategorized_transactions: List of transaction dicts from calculate_spending_score's uncategorized_transactions field. Each has: description, amount, merchant, mcc (empty), and optionally bank.
+    """
+    if not uncategorized_transactions:
+        return json.dumps({
+            "classifications": [],
+            "total_classified": 0,
+            "message": "No uncategorized transactions to classify",
+        })
+
+    try:
+        response = await http_client.post(
+            "/leafybank/mcc/classify",
+            json={"transactions": uncategorized_transactions},
+        )
+        response.raise_for_status()
+        return json.dumps(response.json())
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error classifying transactions: {e.response.text}")
+        return f"Error classifying transactions: {e.response.json().get('detail', str(e))}"
+    except Exception as e:
+        logger.error(f"Error classifying transactions: {e}")
+        return f"Error classifying transactions: {str(e)}"
+
+
+# ---------- Tool: recalculate_spending_score ----------
+
+
+@tool
+async def recalculate_spending_score(
+    category_breakdown: list[dict],
+    total_spending: float,
+    classified_transactions: list[dict],
+) -> str:
+    """Recalculate the spending score after classifying previously uncategorized transactions. This is a local computation — no API calls. Takes the original category_breakdown and total_spending from calculate_spending_score, merges in the classified transaction amounts, and recalculates the score using the same algorithm.
+
+    Args:
+        category_breakdown: The category_breakdown array from the original calculate_spending_score result. Each item has: category_id, category_name, actual_amount, ideal_percentage, min_percentage, max_percentage.
+        total_spending: The total_spending value from the original calculate_spending_score result.
+        classified_transactions: The classifications array from classify_transactions. Each item has: CategoryId, CategoryName, amount, confidence.
+    """
+    try:
+        # Rebuild category_totals from the original breakdown
+        category_totals: dict[str, float] = {}
+        for cat in category_breakdown:
+            cat_id = cat["category_id"]
+            category_totals[cat_id] = cat.get("actual_amount", 0)
+
+        # Add classified transaction amounts to correct categories
+        newly_classified_count = 0
+        still_uncategorized = []
+        for txn in classified_transactions:
+            cat_id = txn.get("CategoryId", "")
+            amount = txn.get("amount", 0)
+
+            if cat_id and cat_id != "uncategorized":
+                category_totals[cat_id] = category_totals.get(cat_id, 0) + amount
+                newly_classified_count += 1
+            else:
+                still_uncategorized.append(txn)
+
+        # Rebuild best_practices structure from original breakdown for _calculate_score
+        best_practices_for_calc = []
+        for cat in category_breakdown:
+            best_practices_for_calc.append({
+                "CategoryId": cat["category_id"],
+                "CategoryName": cat["category_name"],
+                "IdealPercentage": cat["ideal_percentage"],
+                "MinPercentage": cat["min_percentage"],
+                "MaxPercentage": cat["max_percentage"],
+            })
+
+        # Recalculate using the same scoring algorithm
+        new_score, new_breakdown = _calculate_score(
+            category_totals, total_spending, best_practices_for_calc
+        )
+
+        result = {
+            "spending_score": new_score,
+            "total_spending": round(total_spending, 2),
+            "newly_classified_count": newly_classified_count,
+            "still_uncategorized_count": len(still_uncategorized),
+            "category_breakdown": new_breakdown,
+        }
+
+        return json.dumps(result)
+
+    except Exception as e:
+        logger.error(f"Error recalculating spending score: {e}")
+        return f"Error recalculating spending score: {str(e)}"
