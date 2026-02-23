@@ -298,11 +298,15 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
         consent_id: The approved consent ID to verify data access for
     """
     user_id = config["configurable"]["user_id"]
+    profile = config["configurable"].get("profile")
     try:
         token = await get_bearer_token(user_id)
+        params = {"consent_id": consent_id}
+        if profile:
+            params["profile"] = profile
         response = await http_client.get(
             f"/openfinance/secure/customers/{user_id}/external-data",
-            params={"consent_id": consent_id},
+            params=params,
             headers={"Authorization": f"Bearer {token}"},
         )
         response.raise_for_status()

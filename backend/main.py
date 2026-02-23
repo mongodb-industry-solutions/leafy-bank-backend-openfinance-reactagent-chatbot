@@ -57,12 +57,14 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
     user_id: str
     message: str
+    profile: Optional[str] = None
 
 
 class ResumeRequest(BaseModel):
     thread_id: str
     user_id: str
     resume_data: dict
+    profile: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -116,6 +118,7 @@ async def chat(request: ChatRequest, fastapi_request: Request):
         "configurable": {
             "thread_id": thread_id,
             "user_id": request.user_id,
+            "profile": request.profile,
         }
     }
 
@@ -143,6 +146,7 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
         "configurable": {
             "thread_id": request.thread_id,
             "user_id": request.user_id,
+            "profile": request.profile,
         }
     }
 
@@ -170,6 +174,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
         "configurable": {
             "thread_id": thread_id,
             "user_id": request.user_id,
+            "profile": request.profile,
         }
     }
 
@@ -225,6 +230,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
         "configurable": {
             "thread_id": request.thread_id,
             "user_id": request.user_id,
+            "profile": request.profile,
         }
     }
 

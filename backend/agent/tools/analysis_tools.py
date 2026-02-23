@@ -22,11 +22,15 @@ logger = logging.getLogger(__name__)
 async def fetch_external_data(consent_id: str, config: RunnableConfig) -> str:
     """Fetch all external bank data authorized by a consent. Returns accounts, loans, transactions, repayment history, and customer identification depending on consent permissions."""
     user_id = config["configurable"]["user_id"]
+    profile = config["configurable"].get("profile")
     try:
         token = await get_bearer_token(user_id)
+        params = {"consent_id": consent_id}
+        if profile:
+            params["profile"] = profile
         response = await http_client.get(
             f"/openfinance/secure/customers/{user_id}/external-data",
-            params={"consent_id": consent_id},
+            params=params,
             headers={"Authorization": f"Bearer {token}"},
         )
         response.raise_for_status()
@@ -495,6 +499,7 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
         consent_id: The consent ID authorizing external data retrieval
     """
     user_id = config["configurable"]["user_id"]
+    profile = config["configurable"].get("profile")
     try:
         # Fetch all three data sources concurrently
         token = await get_bearer_token(user_id)
@@ -502,9 +507,12 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
         internal_task = http_client.get(
             f"/leafybank/transactions/secure/spending/{user_id}",
         )
+        external_params = {"consent_id": consent_id}
+        if profile:
+            external_params["profile"] = profile
         external_task = http_client.get(
             f"/openfinance/secure/customers/{user_id}/external-data",
-            params={"consent_id": consent_id},
+            params=external_params,
             headers={"Authorization": f"Bearer {token}"},
         )
         best_practices_task = http_client.get("/leafybank/spending/best-practices")

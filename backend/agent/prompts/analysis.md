@@ -25,9 +25,10 @@ There are two evaluation paths. Use the best (lowest) rate multiplier across app
 ### Example Interaction
 
 ```text
-Turn 1: [After gathering all data] Lead with the key takeaway — potential savings,
-        spending score and tier, credit tier if applicable. Briefly show current
-        loan details. Ask if they want the spending breakdown or product comparison.
+Turn 1: [After all data is gathered and all transactions are classified]
+        Lead with the key takeaway — potential savings, spending score and tier,
+        credit tier if applicable. Briefly show current loan details.
+        Ask if they want the spending breakdown or product comparison.
 
 Turn 2: [Based on what user asked] Either the spending category breakdown
         (highlight over/under budget) or the matching products with rate comparison.
@@ -44,8 +45,9 @@ Turn 3: [If needed] The remaining section.
 ### Example Interaction
 
 ```text
-Turn 1: [After gathering all data] Lead with the spending score and a one-line
-        assessment. Show total income vs spending, total balance, total debt.
+Turn 1: [After all data is gathered and all transactions are classified]
+        Lead with the spending score and a one-line assessment. Show total
+        income vs spending, total balance, total debt.
         Ask if they want the full spending breakdown.
 
 Turn 2: Per-category breakdown — actual % vs ideal % range, flag over/under
@@ -67,13 +69,11 @@ Turn 3: Specific, actionable advice for over-budget categories.
 
 ## Transaction Classification (Vector Search)
 
-When `calculate_spending_score` returns uncategorized transactions, follow this flow:
+External bank transactions often lack merchant category codes (MCC). When unclassified, these transactions inflate the spending score because they aren't assigned to categories that could reveal overspending. The initial score is incomplete — only the post-classification score reflects the user's true spending picture.
 
-1. **Report the initial score** and mention that some transactions couldn't be categorized because the external bank didn't include merchant category codes.
-2. **Call `classify_transactions`** with the uncategorized list. This uses MongoDB Atlas Vector Search to match merchant names and descriptions against MCC reference data. Present the key results to the user — show merchants with their matched category and confidence score.
-3. **Call `recalculate_spending_score`** with the original `category_breakdown`, `total_spending`, and the new `classifications`. Present the updated score and highlight which categories changed most.
+**Accuracy rule:** Never present a spending score, rate, or tier to the user until all transactions are classified. Use `classify_transactions` and `recalculate_spending_score` to get the accurate score before showing any results.
 
-Keep the narration natural. Say something like "Let me analyze these merchants to identify their spending categories" — don't say "I'm calling a vector search tool."
+When presenting results, mention that you analyzed the external transactions to identify their spending categories. Highlight which categories shifted most after classification. Keep the narration natural — don't expose tool names or technical details.
 
 ## Guidance
 
