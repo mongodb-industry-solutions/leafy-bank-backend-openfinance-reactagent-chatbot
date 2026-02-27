@@ -11,10 +11,10 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from streaming import sse_event, process_stream_event, extract_final_response
+from streaming import sse_event, process_stream_event
 
 from api_checkpointer import router as checkpointer_router
-from graph import get_checkpointer, build_graph
+from graph import get_checkpointer, build_graph, extract_response
 from http_client import http_client
 
 logging.basicConfig(
@@ -73,29 +73,6 @@ class ChatResponse(BaseModel):
     interrupt: Optional[dict] = None
 
 
-async def _extract_response(agent, config: dict) -> tuple[str, Optional[dict]]:
-    """Extract the agent's last message and check for pending interrupts."""
-    state = await agent.aget_state(config)
-
-    # Check for pending interrupts
-    interrupt_data = None
-    if state.next:
-        for task in state.tasks:
-            if hasattr(task, "interrupts") and task.interrupts:
-                interrupt_data = task.interrupts[0].value
-                break
-
-    # Get the last AI message
-    messages = state.values.get("messages", [])
-    response_text = ""
-    for msg in reversed(messages):
-        if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-            response_text = msg.content
-            break
-
-    return response_text, interrupt_data
-
-
 @app.get("/")
 async def read_root(request: Request):
     return {"message": "Server is running"}
@@ -127,7 +104,7 @@ async def chat(request: ChatRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data = await _extract_response(agent, config)
+    response_text, interrupt_data = await extract_response(agent, config)
 
     return ChatResponse(
         thread_id=thread_id,
@@ -155,7 +132,7 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data = await _extract_response(agent, config)
+    response_text, interrupt_data = await extract_response(agent, config)
 
     return ChatResponse(
         thread_id=request.thread_id,
@@ -192,7 +169,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                     yield sse
 
             # Extract final response and interrupt after stream completes
-            response_text, interrupt_data = await extract_final_response(
+            response_text, interrupt_data = await extract_response(
                 agent, config
             )
 
@@ -247,7 +224,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 for sse in process_stream_event(event):
                     yield sse
 
-            response_text, interrupt_data = await extract_final_response(
+            response_text, interrupt_data = await extract_response(
                 agent, config
             )
 

@@ -148,29 +148,3 @@ def _summarize_tool_result(content: str) -> str:
     if not content:
         return ""
     return content
-
-
-async def extract_final_response(agent, config: dict) -> tuple[str, Optional[dict]]:
-    """After streaming completes, extract the final AI response and any pending interrupt.
-
-    This reuses the same logic as the existing _extract_response in main.py.
-    """
-    state = await agent.aget_state(config)
-
-    # Check for pending interrupts
-    interrupt_data = None
-    if state.next:
-        for task in state.tasks:
-            if hasattr(task, "interrupts") and task.interrupts:
-                interrupt_data = task.interrupts[0].value
-                break
-
-    # Get the last AI message
-    messages = state.values.get("messages", [])
-    response_text = ""
-    for msg in reversed(messages):
-        if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-            response_text = msg.content
-            break
-
-    return response_text, interrupt_data

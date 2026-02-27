@@ -6,7 +6,7 @@ import uuid
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from graph import get_checkpointer, build_graph
+from graph import get_checkpointer, build_graph, extract_response
 
 
 async def main():
@@ -43,25 +43,14 @@ async def main():
                 config,
             )
 
-        # Check for interrupts
-        state = await agent.aget_state(config)
-        has_interrupt = False
-        if state.next:
-            for task in state.tasks:
-                if hasattr(task, "interrupts") and task.interrupts:
-                    interrupt_data = task.interrupts[0].value
-                    print(f"\n  [INTERRUPT: {interrupt_data}]")
-                    print("  Type 'resume' to simulate bank login completion\n")
-                    has_interrupt = True
-                    break
+        # Extract response and check for interrupts
+        response_text, interrupt_data = await extract_response(agent, config)
 
-        # Print last AI message (skip when interrupted — last AI msg is stale)
-        if not has_interrupt:
-            messages = state.values.get("messages", [])
-            for msg in reversed(messages):
-                if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                    print(f"\nAgent: {msg.content}\n")
-                    break
+        if interrupt_data:
+            print(f"\n  [INTERRUPT: {interrupt_data}]")
+            print("  Type 'resume' to simulate bank login completion\n")
+        elif response_text:
+            print(f"\nAgent: {response_text}\n")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Parent StateGraph — orchestrates supervisor, consent agent, and analysis agent."""
 
 import logging
+from typing import Optional
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -67,3 +68,26 @@ def build_graph(checkpointer: MongoDBSaver):
 
     logger.info("Multi-agent graph built successfully")
     return graph
+
+
+async def extract_response(agent, config: dict) -> tuple[str, Optional[dict]]:
+    """Extract the agent's last AI message and any pending interrupt from graph state."""
+    state = await agent.aget_state(config)
+
+    # Check for pending interrupts
+    interrupt_data = None
+    if state.next:
+        for task in state.tasks:
+            if hasattr(task, "interrupts") and task.interrupts:
+                interrupt_data = task.interrupts[0].value
+                break
+
+    # Get the last AI message
+    messages = state.values.get("messages", [])
+    response_text = ""
+    for msg in reversed(messages):
+        if hasattr(msg, "type") and msg.type == "ai" and msg.content:
+            response_text = msg.content
+            break
+
+    return response_text, interrupt_data
