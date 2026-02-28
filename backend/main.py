@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,19 +31,28 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage resources: MCP server, checkpointer, and agent graph."""
-    # Start MongoDB Atlas MCP server for internal data agent
+    # Disable all tools except: find, aggregate, count, list-collections,
+    # collection-schema, connect (connect needed for pre-connect at startup)
+    disabled_tools = ",".join([
+        # Categories
+        "atlas", "create", "update", "delete",
+        # Individual tools we don't need
+        "collection-indexes", "collection-storage-size", "db-stats",
+        "disconnect", "explain", "export", "list-databases", "mongodb-logs",
+        "rename-collection", "switch-connection",
+    ])
     mcp_client = MultiServerMCPClient(
         {
             "mongodb": {
                 "command": "npx",
-                "args": [
-                    "-y",
-                    "@mongodb-js/mongodb-mcp-server@0.0.3",
-                    "--connectionString",
-                    LEAFY_BANK_MONGODB_URI,
-                    "--readOnly",
-                ],
+                "args": ["-y", "mongodb-mcp-server@latest"],
                 "transport": "stdio",
+                "env": {
+                    **os.environ,
+                    "MDB_MCP_CONNECTION_STRING": LEAFY_BANK_MONGODB_URI,
+                    "MDB_MCP_READ_ONLY": "true",
+                    "MDB_MCP_DISABLED_TOOLS": disabled_tools,
+                },
             }
         }
     )

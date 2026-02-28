@@ -15,10 +15,12 @@ env:
 
 # Sensitive values loaded from Kubernetes secrets
 # The value is the K8s secret name containing the key
-# Create with: helm ksec set openfinance-chatbot MONGODB_URI="..." DATABASE_NAME="..."
+# Create with: helm ksec set openfinance-chatbot MONGODB_URI="..." DATABASE_NAME="..." LEAFY_BANK_MONGODB_URI="..." VOYAGE_API_KEY="..."
 envSecrets:
   MONGODB_URI: openfinance-chatbot
   DATABASE_NAME: openfinance-chatbot
+  LEAFY_BANK_MONGODB_URI: openfinance-chatbot
+  VOYAGE_API_KEY: openfinance-chatbot
 
 # AWS IRSA for Bedrock access
 serviceAccount:
