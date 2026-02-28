@@ -1,4 +1,4 @@
-"""Analysis agent — evaluates financial data for loan portability and financial advice."""
+"""Portability agent — evaluates financial data for loan portability and financial advice."""
 
 import logging
 from pathlib import Path
@@ -22,7 +22,7 @@ from agent.tools.analysis_tools import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_PATH = Path(__file__).parent / "prompts" / "analysis.md"
+PROMPT_PATH = Path(__file__).parent / "prompts" / "portability.md"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
 TOOLS = [
@@ -39,8 +39,8 @@ TOOLS = [
 ]
 
 
-def create_analysis_agent():
-    """Build and return the analysis agent graph (no checkpointer)."""
+def create_portability_agent():
+    """Build and return the portability agent graph (no checkpointer)."""
     llm = ChatBedrockConverse(
         model=CHAT_COMPLETIONS_MODEL_ID,
         region_name=AWS_REGION,
@@ -51,8 +51,8 @@ def create_analysis_agent():
         model=llm,
         tools=TOOLS,
         system_prompt=SYSTEM_PROMPT,
-        name="analysis_agent",
+        name="portability_agent",
     )
 
-    logger.info("Analysis agent created successfully")
+    logger.info("Portability agent created successfully")
     return agent

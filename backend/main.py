@@ -11,8 +11,11 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from streaming import sse_event, process_stream_event
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 
+from streaming import sse_event, process_stream_event
+from config import LEAFY_BANK_MONGODB_URI
 from api_checkpointer import router as checkpointer_router
 from graph import get_checkpointer, build_graph, extract_response
 from http_client import http_client
@@ -26,11 +29,50 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage resources: checkpointer and agent graph."""
-    checkpointer = get_checkpointer()
-    app.state.agent = build_graph(checkpointer)
-    logger.info("Multi-agent graph initialized")
-    yield
+    """Manage resources: MCP server, checkpointer, and agent graph."""
+    # Start MongoDB Atlas MCP server for internal data agent
+    mcp_client = MultiServerMCPClient(
+        {
+            "mongodb": {
+                "command": "npx",
+                "args": [
+                    "-y",
+                    "@mongodb-js/mongodb-mcp-server@0.0.3",
+                    "--connectionString",
+                    LEAFY_BANK_MONGODB_URI,
+                    "--readOnly",
+                ],
+                "transport": "stdio",
+            }
+        }
+    )
+    # Use a persistent session so connection state is maintained across tool calls.
+    # Default get_tools() is stateless — each tool call creates a fresh session,
+    # which loses the MongoDB connection state.
+    async with mcp_client.session("mongodb") as session:
+        all_mcp_tools = await load_mcp_tools(session)
+        logger.info(f"MongoDB MCP server started ({len(all_mcp_tools)} tools loaded)")
+
+        # Pre-connect to MongoDB so the agent doesn't need to call 'connect' itself
+        connect_tool = next((t for t in all_mcp_tools if t.name == "connect"), None)
+        if connect_tool:
+            await connect_tool.ainvoke({"connectionString": LEAFY_BANK_MONGODB_URI})
+            logger.info("MongoDB MCP pre-connected successfully")
+        else:
+            logger.warning("No 'connect' tool found in MCP tools — agent will need to connect manually")
+
+        # Only expose read/query tools to the agent
+        allowed_tools = {"find", "aggregate", "count", "list-collections", "collection-schema"}
+        mcp_tools = [t for t in all_mcp_tools if t.name in allowed_tools]
+        logger.info(f"{len(mcp_tools)} MCP tools passed to internal data agent")
+
+        checkpointer = get_checkpointer()
+        app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
+        app.state.mcp_client = mcp_client
+        logger.info("Multi-agent graph initialized")
+
+        yield
+
     await http_client.aclose()
     logger.info("HTTP client closed")
 

@@ -1,4 +1,4 @@
-"""Parent StateGraph — orchestrates supervisor, consent agent, and analysis agent."""
+"""Parent StateGraph — orchestrates supervisor, consent agent, portability agent, and internal data agent."""
 
 import logging
 from typing import Optional
@@ -14,7 +14,8 @@ from config import (
 from state import AgentState
 from agent.db.mdb import MongoDBConnector
 from agent.consent_agent import create_consent_agent
-from agent.analysis_agent import create_analysis_agent
+from agent.portability_agent import create_portability_agent
+from agent.internal_data_agent import create_internal_data_agent
 from agent.supervisor import supervisor_node
 
 logger = logging.getLogger(__name__)
@@ -38,17 +39,25 @@ def _route_from_supervisor(state: dict) -> str:
     return state.get("next", "FINISH")
 
 
-def build_graph(checkpointer: MongoDBSaver):
-    """Build and compile the multi-agent graph."""
+def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
+    """Build and compile the multi-agent graph.
+
+    Args:
+        checkpointer: MongoDB checkpointer for conversation persistence.
+        mcp_tools: LangChain tools from the MongoDB Atlas MCP server for the
+            internal data agent.
+    """
     consent_agent = create_consent_agent()
-    analysis_agent = create_analysis_agent()
+    portability_agent = create_portability_agent()
+    internal_data_agent = create_internal_data_agent(mcp_tools or [])
 
     workflow = StateGraph(AgentState)
 
     # Nodes
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("consent_agent", consent_agent)
-    workflow.add_node("analysis_agent", analysis_agent)
+    workflow.add_node("portability_agent", portability_agent)
+    workflow.add_node("internal_data_agent", internal_data_agent)
 
     # Edges
     workflow.add_edge(START, "supervisor")
@@ -57,12 +66,14 @@ def build_graph(checkpointer: MongoDBSaver):
         _route_from_supervisor,
         {
             "consent_agent": "consent_agent",
-            "analysis_agent": "analysis_agent",
+            "portability_agent": "portability_agent",
+            "internal_data_agent": "internal_data_agent",
             "FINISH": END,
         },
     )
     workflow.add_edge("consent_agent", "supervisor")
-    workflow.add_edge("analysis_agent", "supervisor")
+    workflow.add_edge("portability_agent", "supervisor")
+    workflow.add_edge("internal_data_agent", "supervisor")
 
     graph = workflow.compile(checkpointer=checkpointer)
 

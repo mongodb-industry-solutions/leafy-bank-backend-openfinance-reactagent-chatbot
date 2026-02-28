@@ -1,4 +1,4 @@
-"""Supervisor node — routes between consent_agent, analysis_agent, and FINISH."""
+"""Supervisor node — routes between consent_agent, portability_agent, and FINISH."""
 
 import json
 import logging
@@ -27,7 +27,7 @@ _supervisor_llm = ChatBedrockConverse(
 class RouterDecision(BaseModel):
     """Supervisor routing decision."""
 
-    next: Literal["consent_agent", "analysis_agent", "FINISH"] = Field(
+    next: Literal["consent_agent", "portability_agent", "internal_data_agent", "FINISH"] = Field(
         description="Which agent to route to, or FINISH to end the turn."
     )
     response: str = Field(
@@ -191,12 +191,8 @@ async def supervisor_node(state: dict) -> dict:
         content=f"{SYSTEM_PROMPT}\n\n## Current State\n{context}"
     )
 
-    # Trim to recent messages — the supervisor only needs enough context to
-    # route correctly.  Consent state is already in the system message.
-    recent_messages = messages[-10:]
-
     decision: RouterDecision = await _supervisor_llm_structured.ainvoke(
-        [system_msg] + recent_messages
+        [system_msg] + messages
     )
 
     logger.info(f"Supervisor decision: next={decision.next}")
@@ -210,11 +206,11 @@ async def supervisor_node(state: dict) -> dict:
     # When FINISH, add the supervisor's response as an AI message
     if decision.next == "FINISH" and decision.response:
         result["messages"] = [AIMessage(content=decision.response)]
-    # When routing to analysis_agent with an active consent, inject a handoff
-    # message so the analysis agent has consent_id clearly in recent history
-    elif decision.next == "analysis_agent" and active_consent_id:
+    # When routing to portability_agent with an active consent, inject a handoff
+    # message so the portability agent has consent_id clearly in recent history
+    elif decision.next == "portability_agent" and active_consent_id:
         handoff = (
-            f"Routing to analysis agent. "
+            f"Routing to portability agent. "
             f"Active consent ID: {active_consent_id} "
             f"| Purpose: {active_consent_purpose}"
         )
