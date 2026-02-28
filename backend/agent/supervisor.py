@@ -191,8 +191,12 @@ async def supervisor_node(state: dict) -> dict:
         content=f"{SYSTEM_PROMPT}\n\n## Current State\n{context}"
     )
 
+    # Trim to recent messages — the supervisor only needs enough context to
+    # route correctly.  Consent state is already in the system message.
+    recent_messages = messages[-10:]
+
     decision: RouterDecision = await _supervisor_llm_structured.ainvoke(
-        [system_msg] + messages
+        [system_msg] + recent_messages
     )
 
     logger.info(f"Supervisor decision: next={decision.next}")

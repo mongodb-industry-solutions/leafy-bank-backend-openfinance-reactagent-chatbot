@@ -165,6 +165,9 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 stream_mode="updates",
                 subgraphs=True,
             ):
+                if await fastapi_request.is_disconnected():
+                    logger.info(f"Client disconnected mid-stream (thread={thread_id})")
+                    return
                 for sse in process_stream_event(event):
                     yield sse
 
@@ -221,6 +224,9 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 stream_mode="updates",
                 subgraphs=True,
             ):
+                if await fastapi_request.is_disconnected():
+                    logger.info(f"Client disconnected mid-stream (thread={request.thread_id})")
+                    return
                 for sse in process_stream_event(event):
                     yield sse
 
