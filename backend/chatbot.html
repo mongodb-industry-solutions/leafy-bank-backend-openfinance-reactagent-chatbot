@@ -497,9 +497,8 @@
   <input type="text" id="scenario-user-id" value="65a546ae4a8f64e8f88fb89e" style="width:220px;font-size:11px;" title="User ObjectId" />
   <label>Profile:</label>
   <select id="scenario-type">
-    <option value="">None (base only)</option>
-    <option value="overspender">Overspender</option>
     <option value="balanced">Balanced</option>
+    <option value="overspender">Overspender</option>
     <option value="saver">Saver</option>
   </select>
   <span class="hint">Profile is applied automatically to all requests</span>
@@ -678,6 +677,24 @@ function addStepDetail(tool, args) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+function addProgressDetail(message) {
+  if (!_stepDetails) return;
+  // Complete any previous pending progress detail
+  const pending = _stepDetails.querySelectorAll('.step-detail[data-progress="pending"]');
+  pending.forEach(item => {
+    item.setAttribute("data-progress", "done");
+    const icon = item.querySelector("span");
+    if (icon) { icon.className = "icon-done"; icon.innerHTML = "&#10003;"; }
+  });
+  // Add new progress detail
+  const item = document.createElement("div");
+  item.className = "step-detail";
+  item.setAttribute("data-progress", "pending");
+  item.innerHTML = `<div><span class="icon-pending">&#9679;</span> ${escapeHtml(message)}</div>`;
+  _stepDetails.appendChild(item);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
 function completeStepDetail(tool, summary) {
   if (!_stepDetails) return;
   const items = _stepDetails.querySelectorAll(`.step-detail[data-tool="${tool}"]`);
@@ -740,7 +757,6 @@ async function processSSEStream(body) {
 
 function handleSSEEvent(event) {
   const { type, payload } = event;
-
   switch (type) {
     case "thread_id":
       threadId = payload.thread_id;
@@ -758,12 +774,26 @@ function handleSSEEvent(event) {
       break;
 
     case "tool_result":
+      // Complete any pending progress details before completing the tool
+      if (_stepDetails) {
+        const pending = _stepDetails.querySelectorAll('.step-detail[data-progress="pending"]');
+        pending.forEach(item => {
+          item.setAttribute("data-progress", "done");
+          const icon = item.querySelector("span");
+          if (icon) { icon.className = "icon-done"; icon.innerHTML = "&#10003;"; }
+        });
+      }
       completeStepDetail(payload.tool, payload.summary);
       updateStepIndicator(payload.tool + "() completed");
       break;
 
     case "agent_complete":
       updateStepIndicator(payload.agent + " finished");
+      break;
+
+    case "progress":
+      addProgressDetail(payload.message);
+      updateStepIndicator(payload.message);
       break;
 
     case "response":

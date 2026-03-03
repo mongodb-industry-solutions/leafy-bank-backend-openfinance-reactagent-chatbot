@@ -9,8 +9,7 @@ from langchain_aws import ChatBedrockConverse
 from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
 from agent.tools.analysis_tools import (
     fetch_credit_score,
-    get_underwriting_rules,
-    find_matching_products,
+    evaluate_portability_offer,
     fetch_internal_accounts,
     calculate_financial_position,
     fetch_customer_identification,
@@ -28,8 +27,7 @@ TOOLS = [
     analyze_spending,
     fetch_customer_identification,
     fetch_credit_score,
-    get_underwriting_rules,
-    find_matching_products,
+    evaluate_portability_offer,
     fetch_internal_accounts,
     calculate_financial_position,
 ]

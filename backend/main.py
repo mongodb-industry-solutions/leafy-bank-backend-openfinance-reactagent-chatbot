@@ -134,7 +134,10 @@ async def read_root(request: Request):
 async def chatbot_ui():
     """Embedded chat interface for quick testing."""
     html_path = Path(__file__).parent / "chatbot.html"
-    return HTMLResponse(content=html_path.read_text())
+    return HTMLResponse(
+        content=html_path.read_text(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -214,7 +217,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
             async for event in agent.astream(
                 {"messages": [HumanMessage(content=request.message)]},
                 config,
-                stream_mode="updates",
+                stream_mode=["updates", "custom"],
                 subgraphs=True,
             ):
                 if await fastapi_request.is_disconnected():
@@ -273,7 +276,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
             async for event in agent.astream(
                 Command(resume=request.resume_data),
                 config,
-                stream_mode="updates",
+                stream_mode=["updates", "custom"],
                 subgraphs=True,
             ):
                 if await fastapi_request.is_disconnected():

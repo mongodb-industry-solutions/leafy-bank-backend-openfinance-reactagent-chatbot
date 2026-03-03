@@ -24,28 +24,47 @@ def sse_event(event_type: str, payload: dict) -> str:
 
 
 def process_stream_event(event: tuple) -> list[str]:
-    """Convert a LangGraph astream(subgraphs=True, stream_mode='updates') event
+    """Convert a LangGraph astream(subgraphs=True, stream_mode=[...]) event
     into zero or more SSE event strings.
 
-    With stream_mode="updates" (string) and subgraphs=True, each event is:
-        (namespace_tuple, {node_name: update_dict})
+    With stream_mode=["updates", "custom"] and subgraphs=True, each event is:
+        (namespace_tuple, mode_str, data)
+
+    mode_str:
+        "updates" = standard node update
+        "custom"  = user-emitted via get_stream_writer()
 
     namespace_tuple:
         () = parent graph
         ("consent_agent:xxx",) = inside consent_agent sub-graph
-        ("analysis_agent:xxx",) = inside analysis_agent sub-graph
+        ("portability_agent:xxx",) = inside portability_agent sub-graph
     """
-    if not isinstance(event, tuple) or len(event) != 2:
-        logger.debug("Skipping unrecognized event format: %s", type(event))
+    if not isinstance(event, tuple):
+        logger.debug("Skipping non-tuple event: %s", type(event))
         return []
 
-    namespace, data = event
+    if len(event) == 3:
+        namespace, mode, data = event
 
+        if mode == "custom":
+            return _handle_custom_event(namespace, data)
+
+        if mode == "updates":
+            return _handle_updates_event(namespace, data)
+
+        logger.debug("Skipping unknown stream mode: %s", mode)
+        return []
+
+    logger.debug("Skipping event with unexpected length: %d", len(event))
+    return []
+
+
+def _handle_updates_event(namespace: tuple, data: dict) -> list[str]:
+    """Process a standard 'updates' mode event."""
     if not isinstance(data, dict):
-        logger.debug("Skipping non-dict event data: %s", type(data))
+        logger.debug("Skipping non-dict updates data: %s", type(data))
         return []
 
-    # Determine which agent we're inside (if any)
     agent_name = _extract_agent_name(namespace)
 
     results = []
@@ -53,6 +72,24 @@ def process_stream_event(event: tuple) -> list[str]:
         results.extend(_process_node_update(node_name, update, agent_name))
 
     return results
+
+
+def _handle_custom_event(namespace: tuple, data) -> list[str]:
+    """Process a 'custom' mode event emitted by get_stream_writer()."""
+    if not isinstance(data, dict):
+        logger.debug("Skipping non-dict custom data: %s", type(data))
+        return []
+
+    if data.get("type") != "progress":
+        logger.debug("Skipping unknown custom event type: %s", data.get("type"))
+        return []
+
+    agent_name = _extract_agent_name(namespace)
+
+    return [sse_event("progress", {
+        "agent": agent_name,
+        "message": data.get("message", ""),
+    })]
 
 
 def _extract_agent_name(namespace: tuple) -> Optional[str]:

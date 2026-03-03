@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 
 from http_client import http_client
 from agent.tools.auth import get_bearer_token
@@ -94,24 +95,7 @@ async def fetch_credit_score(config: RunnableConfig) -> str:
         return f"Error fetching credit score: {str(e)}"
 
 
-# ---------- Tool 5: get_underwriting_rules ----------
-
-
-@tool
-async def get_underwriting_rules() -> str:
-    """Get loan portability underwriting rules including tier thresholds and rate multipliers for both Spending and CreditBureau paths."""
-    try:
-        response = await http_client.get(
-            "/leafybank/portability/underwriting-rules",
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except Exception as e:
-        logger.error(f"Error fetching underwriting rules: {e}")
-        return f"Error fetching underwriting rules: {str(e)}"
-
-
-# ---------- Tool 6: find_matching_products ----------
+# ---------- Portability evaluation helpers ----------
 
 # Maps consent purpose → expected loan sub-type for portability validation
 _PURPOSE_TO_LOAN_TYPE = {
@@ -121,64 +105,323 @@ _PURPOSE_TO_LOAN_TYPE = {
 }
 
 
-@tool
-async def find_matching_products(
-    product_type: str,
-    current_rate: float,
-    consent_purpose: str,
+def _find_applicable_rules(
+    rules: list[dict],
     loan_sub_type: str,
-    current_amount: Optional[float] = None,
-) -> str:
-    """Find Leafy Bank products with better rates than the user's current product.
+    loan_amount: float,
+    path: str,
+) -> list[dict]:
+    """Find underwriting rules matching loan sub-type, amount range, and path.
 
-    Validates that the loan sub-type from the external data matches the consent
-    purpose before searching. Returns a validation error if they don't match.
+    Rules have overlapping ranges (e.g. baseline covers all amounts, spending-gt-1500
+    covers >$1500). Returns matches sorted by specificity — more specific rules first.
+    """
+    applicable = []
+    for rule in rules:
+        if loan_sub_type not in rule.get("LoanSubTypes", []):
+            continue
+        if rule.get("Path") != path:
+            continue
+        amount_min = rule.get("LoanAmountMin", 0) or 0
+        amount_max = rule.get("LoanAmountMax")
+        if loan_amount < amount_min:
+            continue
+        if amount_max is not None and loan_amount > amount_max:
+            continue
+        applicable.append(rule)
+
+    # Prefer specific rules over baseline (non-null LoanAmountMax first)
+    applicable.sort(key=lambda r: (
+        r.get("RuleId") == "baseline",
+        r.get("LoanAmountMax") if r.get("LoanAmountMax") is not None else float("inf"),
+    ))
+    return applicable
+
+
+def _match_score_to_tier(
+    score: int | float,
+    tiers: list[dict],
+) -> dict | None:
+    """Match a score against tier thresholds. Returns the best qualifying tier.
+
+    Tiers are sorted descending by MinScore — the first tier the score meets
+    or exceeds is the best one (lowest RateMultiplier).
+    """
+    for tier in sorted(tiers, key=lambda t: t["MinScore"], reverse=True):
+        if score >= tier["MinScore"]:
+            return tier
+    return None
+
+
+def _compute_monthly_payment(
+    principal: float,
+    annual_rate_pct: float,
+    term_months: int,
+) -> float:
+    """Standard amortization: M = P × [r(1+r)^n] / [(1+r)^n - 1]."""
+    if annual_rate_pct <= 0 or term_months <= 0:
+        return round(principal / max(term_months, 1), 2)
+    r = annual_rate_pct / 100.0 / 12.0
+    n = term_months
+    payment = principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+    return round(payment, 2)
+
+
+# ---------- Tool 5: evaluate_portability_offer ----------
+
+
+@tool
+async def evaluate_portability_offer(
+    spending_score: int,
+    current_rate: float,
+    loan_amount: float,
+    loan_sub_type: str,
+    consent_purpose: str,
+    remaining_term_months: Optional[int] = None,
+    credit_score: Optional[int] = None,
+) -> str:
+    """Evaluate a loan portability offer. Fetches underwriting rules and matching
+    Leafy Bank products, then computes the qualified rate, monthly payments, and
+    savings deterministically. Returns pre-computed results.
+
+    Call this AFTER analyze_spending (which provides spending_score, current_rate,
+    loan_amount, loan_sub_type from external_data) and optionally fetch_credit_score.
 
     Args:
-        product_type: Product type to match (Loan or CreditCard)
-        current_rate: User's current interest rate to beat
-        consent_purpose: The consent purpose (e.g. PERSONAL_LOAN_PORTABILITY)
-        loan_sub_type: Loan sub-type from external data (Personal, PayrollDeductible, or Vehicle)
-        current_amount: Loan amount for eligibility check
+        spending_score: Spending score 0-100 from analyze_spending
+        current_rate: Current loan interest rate (%) from external_data products
+        loan_amount: Outstanding loan balance from external_data products
+        loan_sub_type: Loan sub-type from external_data (Personal, PayrollDeductible, Vehicle)
+        consent_purpose: The consent purpose (PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY)
+        remaining_term_months: Remaining loan term in months from external_data products. When provided, monthly payment and savings calculations are included.
+        credit_score: Credit bureau score from fetch_credit_score (only needed for Personal loans > $1500)
     """
-    # Validate loan type matches consent purpose
-    expected_type = _PURPOSE_TO_LOAN_TYPE.get(consent_purpose)
-    if expected_type and loan_sub_type and loan_sub_type != expected_type:
-        return json.dumps({
-            "status": "loan_type_mismatch",
-            "consent_purpose": consent_purpose,
-            "expected_loan_type": expected_type,
-            "actual_loan_type": loan_sub_type,
-            "message": (
-                f"The consent purpose is {consent_purpose} (expects {expected_type} loans), "
-                f"but the external loan is {loan_sub_type}. These are different loan types — "
-                f"comparing them would produce misleading results. "
-                f"Ask the user how they'd like to proceed."
-            ),
-        })
+    try:
+        writer = get_stream_writer()
+    except Exception:
+        writer = lambda _: None
 
     try:
+        # --- Validate consent purpose vs loan sub-type ---
+        expected_type = _PURPOSE_TO_LOAN_TYPE.get(consent_purpose)
+        if expected_type and loan_sub_type and loan_sub_type != expected_type:
+            return json.dumps({
+                "status": "loan_type_mismatch",
+                "consent_purpose": consent_purpose,
+                "expected_loan_type": expected_type,
+                "actual_loan_type": loan_sub_type,
+                "message": (
+                    f"The consent purpose is {consent_purpose} (expects {expected_type} loans), "
+                    f"but the external loan is {loan_sub_type}. These are different loan types — "
+                    f"comparing them would produce misleading results. "
+                    f"Ask the user how they'd like to proceed."
+                ),
+            })
+
+        # --- Fetch underwriting rules and matching products concurrently ---
+        writer({"type": "progress", "message": "Evaluating your portability offer..."})
+
         params = {
-            "product_type": product_type,
+            "product_type": "Loan",
             "current_rate": current_rate,
+            "current_amount": loan_amount,
+            "loan_sub_type": loan_sub_type,
         }
-        if current_amount is not None:
-            params["current_amount"] = current_amount
-        if loan_sub_type:
-            params["loan_sub_type"] = loan_sub_type
 
-        response = await http_client.get(
-            "/leafybank/products/secure/match",
-            params=params,
+        rules_task = http_client.get("/leafybank/portability/underwriting-rules")
+        products_task = http_client.get(
+            "/leafybank/products/secure/match", params=params
         )
-        response.raise_for_status()
-        return json.dumps(response.json())
+
+        rules_resp, products_resp = await asyncio.gather(
+            rules_task, products_task, return_exceptions=True
+        )
+
+        if isinstance(rules_resp, Exception):
+            logger.error(f"Error fetching underwriting rules: {rules_resp}")
+            return f"Error fetching underwriting rules: {str(rules_resp)}"
+        rules_resp.raise_for_status()
+        all_rules = rules_resp.json().get("rules", [])
+
+        if isinstance(products_resp, Exception):
+            logger.error(f"Error fetching matching products: {products_resp}")
+            return f"Error fetching matching products: {str(products_resp)}"
+        products_resp.raise_for_status()
+        matching_products = products_resp.json().get("matches", [])
+
+        writer({"type": "progress", "message": "Computing rates and savings..."})
+
+        # --- Determine best rate multiplier across applicable paths ---
+
+        # Spending path (always applies)
+        spending_rules = _find_applicable_rules(
+            all_rules, loan_sub_type, loan_amount, "Spending"
+        )
+        spending_tier = None
+        spending_multiplier = None
+        spending_rule_id = None
+        if spending_rules:
+            best_spending_rule = spending_rules[0]
+            spending_rule_id = best_spending_rule.get("RuleId")
+            spending_tier = _match_score_to_tier(
+                spending_score, best_spending_rule.get("Tiers", [])
+            )
+            if spending_tier:
+                spending_multiplier = spending_tier["RateMultiplier"]
+
+        # Credit bureau path (only when credit_score is provided)
+        credit_tier = None
+        credit_multiplier = None
+        credit_rule_id = None
+        if credit_score is not None:
+            credit_rules = _find_applicable_rules(
+                all_rules, loan_sub_type, loan_amount, "CreditBureau"
+            )
+            if credit_rules:
+                best_credit_rule = credit_rules[0]
+                credit_rule_id = best_credit_rule.get("RuleId")
+                credit_tier = _match_score_to_tier(
+                    credit_score, best_credit_rule.get("Tiers", [])
+                )
+                if credit_tier:
+                    credit_multiplier = credit_tier["RateMultiplier"]
+
+        # Pick best (lowest) multiplier
+        multipliers = []
+        if spending_multiplier is not None:
+            multipliers.append(("spending", spending_multiplier))
+        if credit_multiplier is not None:
+            multipliers.append(("credit_bureau", credit_multiplier))
+
+        if not multipliers:
+            return json.dumps({
+                "status": "not_eligible",
+                "spending_score": spending_score,
+                "credit_score": credit_score,
+                "message": (
+                    f"Spending score of {spending_score} does not meet the minimum "
+                    f"threshold for any underwriting tier."
+                ),
+            })
+
+        best_path, best_multiplier = min(multipliers, key=lambda x: x[1])
+
+        # --- Build evaluation summary ---
+        evaluation = {
+            "spending_score": spending_score,
+            "spending_rule_id": spending_rule_id,
+            "spending_multiplier": spending_multiplier,
+            "credit_score": credit_score,
+            "credit_rule_id": credit_rule_id,
+            "credit_multiplier": credit_multiplier,
+            "best_multiplier": best_multiplier,
+            "best_path": best_path,
+        }
+
+        # --- Current loan payment ---
+        current_loan = {
+            "rate": current_rate,
+            "amount": loan_amount,
+            "remaining_term_months": remaining_term_months,
+        }
+        if remaining_term_months and remaining_term_months > 0:
+            current_loan["monthly_payment"] = _compute_monthly_payment(
+                loan_amount, current_rate, remaining_term_months
+            )
+
+        # --- Build offers with pre-computed rates and savings ---
+        offers = []
+        for product in matching_products:
+            base_rate = product.get("ProductInterestRate", 0)
+            qualified_rate = round(base_rate * best_multiplier, 2)
+            rate_vs_current = round(current_rate - qualified_rate, 2)
+
+            offer = {
+                "product_id": product.get("ProductId"),
+                "product_name": product.get("ProductName"),
+                "base_rate": base_rate,
+                "qualified_rate": qualified_rate,
+                "rate_improvement_vs_current": rate_vs_current,
+                "loan_range": (
+                    f"${product.get('MinAmount', 0):,.0f} - "
+                    f"${product.get('MaxAmount', 0):,.0f}"
+                ),
+                "term_range": (
+                    f"{product.get('MinTerm', '')} - "
+                    f"{product.get('MaxTerm', '')} months"
+                ),
+            }
+
+            if remaining_term_months and remaining_term_months > 0:
+                offer["monthly_payment"] = _compute_monthly_payment(
+                    loan_amount, qualified_rate, remaining_term_months
+                )
+                if "monthly_payment" in current_loan:
+                    offer["monthly_savings"] = round(
+                        current_loan["monthly_payment"] - offer["monthly_payment"], 2
+                    )
+                    offer["total_savings_over_term"] = round(
+                        offer["monthly_savings"] * remaining_term_months, 2
+                    )
+
+            offers.append(offer)
+
+        offers.sort(key=lambda o: o["qualified_rate"])
+
+        # --- Human-readable summary ---
+        path_label = "spending" if best_path == "spending" else "credit bureau"
+        parts = [
+            f"Your spending score of {spending_score} qualifies for a "
+            f"{best_multiplier}x multiplier (via {path_label} path).",
+        ]
+        if credit_score is not None and credit_multiplier is not None:
+            parts.append(
+                f" Your credit score of {credit_score} qualifies for a "
+                f"{credit_multiplier}x credit bureau multiplier."
+            )
+
+        if offers:
+            best = offers[0]
+            parts.append(
+                f" Top Leafy Bank offer: {best['product_name']} at "
+                f"{best['qualified_rate']}% "
+                f"(base {best['base_rate']}% × {best_multiplier})."
+            )
+            if "total_savings_over_term" in best and remaining_term_months:
+                parts.append(
+                    f" Over {remaining_term_months} months you'd save "
+                    f"${best['monthly_savings']:.2f}/month "
+                    f"(${best['total_savings_over_term']:.2f} total)."
+                )
+            else:
+                parts.append(
+                    f" That's {best['rate_improvement_vs_current']}% lower "
+                    f"than your current {current_rate}% rate."
+                )
+        else:
+            parts.append(
+                " No Leafy Bank products currently offer a lower base rate "
+                "than your existing loan for this loan type."
+            )
+
+        result = {
+            "status": "evaluated",
+            "evaluation": evaluation,
+            "current_loan": current_loan,
+            "offers": offers,
+            "summary": "".join(parts),
+        }
+        return json.dumps(result)
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error evaluating portability offer: {e.response.text}")
+        return f"Error evaluating portability offer: {e.response.json().get('detail', str(e))}"
     except Exception as e:
-        logger.error(f"Error finding matching products: {e}")
-        return f"Error finding matching products: {str(e)}"
+        logger.error(f"Error evaluating portability offer: {e}")
+        return f"Error evaluating portability offer: {str(e)}"
 
 
-# ---------- Tool 7: fetch_internal_accounts ----------
+# ---------- Tool 6: fetch_internal_accounts ----------
 
 
 @tool
@@ -197,7 +440,7 @@ async def fetch_internal_accounts(config: RunnableConfig) -> str:
         return f"Error fetching internal accounts: {str(e)}"
 
 
-# ---------- Tool 8: calculate_financial_position ----------
+# ---------- Tool 7: calculate_financial_position ----------
 
 
 @tool
@@ -500,9 +743,18 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
     """
     user_id = config["configurable"]["user_id"]
     profile = config["configurable"].get("profile")
+
+    # Stream writer for real-time progress updates to the frontend.
+    # Falls back to no-op when called via ainvoke (non-streaming endpoints).
+    try:
+        writer = get_stream_writer()
+    except Exception:
+        writer = lambda _: None
+
     try:
         # --- Step 1: Fetch all data sources concurrently ---
         token = await get_bearer_token(user_id)
+        writer({"type": "progress", "message": "Fetching transactions from all banks..."})
 
         internal_task = http_client.get(
             f"/leafybank/transactions/secure/spending/{user_id}",
@@ -555,6 +807,8 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
 
         total_spending = int_spending + ext_spending
         uncategorized = int_uncat + ext_uncat
+        total_txns = len(internal_transactions) + len(external_transactions)
+        writer({"type": "progress", "message": f"Categorized {total_txns} transactions"})
 
         # --- Step 3: Classify uncategorized transactions via vector search ---
         classification_summary = {
@@ -564,6 +818,10 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
         }
 
         if uncategorized:
+            writer({"type": "progress", "message": f"Classifying {len(uncategorized)} untagged transactions..."})
+            logger.info(
+                f"Classifying {len(uncategorized)} uncategorized transactions via vector search"
+            )
             try:
                 classify_resp = await http_client.post(
                     "/leafybank/mcc/classify",
@@ -594,8 +852,11 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
 
             except Exception as e:
                 logger.warning(f"Classification failed, scoring without it: {e}")
+        else:
+            logger.info("All transactions have MCC codes — classification not needed")
 
         # --- Step 4: Calculate final score (post-classification) ---
+        writer({"type": "progress", "message": "Computing final spending score..."})
         score, breakdown = _calculate_score(
             merged_totals, total_spending, best_practices_list
         )
