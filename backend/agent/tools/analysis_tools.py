@@ -319,7 +319,7 @@ async def find_user(config: RunnableConfig) -> str:
         return f"Error finding user: {str(e)}"
 
 
-# ---------- Tool 12: calculate_spending_score ----------
+# ---------- Tool: analyze_spending ----------
 
 
 def _build_mcc_to_category(best_practices: list[dict]) -> dict[str, dict]:
@@ -492,8 +492,8 @@ def _calculate_score(
 
 
 @tool
-async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> str:
-    """Calculate a spending health score (0-100) by analyzing ALL transactions from both Leafy Bank (internal) and external banks. Categorizes every transaction by MCC code against spending best practices. Returns the score, per-category breakdown, and full external data (accounts, loans, etc.).
+async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
+    """Analyze spending health across all bank accounts. Fetches transactions from both Leafy Bank (internal) and external banks, classifies any uncategorized transactions using MongoDB Atlas Vector Search, and returns a final spending score (0-100) with per-category breakdown. All external data (accounts, loans, repayment history) is included in the response.
 
     Args:
         consent_id: The consent ID authorizing external data retrieval
@@ -501,7 +501,7 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
     user_id = config["configurable"]["user_id"]
     profile = config["configurable"].get("profile")
     try:
-        # Fetch all three data sources concurrently
+        # --- Step 1: Fetch all data sources concurrently ---
         token = await get_bearer_token(user_id)
 
         internal_task = http_client.get(
@@ -529,10 +529,6 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
         external_data = external_resp.json()
         best_practices = bp_resp.json()
 
-        # Unwrap API responses:
-        # Internal: {"transactions": [...], "total_count": N}
-        # External: {"transactions": [...], "accounts": [...], ...}
-        # Best practices: {"categories": [...]}
         internal_transactions = internal_data.get("transactions", []) or []
         external_transactions = external_data.get("transactions", []) or []
         best_practices_list = best_practices.get("categories", []) or []
@@ -543,10 +539,9 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
             f"{len(best_practices_list)} categories"
         )
 
-        # Build MCC → category lookup
+        # --- Step 2: Categorize all transactions by MCC ---
         mcc_map = _build_mcc_to_category(best_practices_list)
 
-        # Categorize both transaction sets
         int_totals, int_spending, int_uncat = _categorize_internal_transactions(
             internal_transactions, mcc_map
         )
@@ -554,15 +549,56 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
             external_transactions, mcc_map
         )
 
-        # Merge category totals
         merged_totals: dict[str, float] = {}
         for cat_id in set(list(int_totals.keys()) + list(ext_totals.keys())):
             merged_totals[cat_id] = int_totals.get(cat_id, 0) + ext_totals.get(cat_id, 0)
 
         total_spending = int_spending + ext_spending
+        uncategorized = int_uncat + ext_uncat
 
-        # Calculate score and breakdown
-        score, breakdown = _calculate_score(merged_totals, total_spending, best_practices_list)
+        # --- Step 3: Classify uncategorized transactions via vector search ---
+        classification_summary = {
+            "total_uncategorized": len(uncategorized),
+            "newly_classified": 0,
+            "still_uncategorized": len(uncategorized),
+        }
+
+        if uncategorized:
+            try:
+                classify_resp = await http_client.post(
+                    "/leafybank/mcc/classify",
+                    json={"transactions": uncategorized},
+                )
+                classify_resp.raise_for_status()
+                classifications = classify_resp.json().get("classifications", [])
+
+                # Merge classified amounts into category totals
+                newly_classified = 0
+                still_uncat = 0
+                for txn in classifications:
+                    cat_id = txn.get("CategoryId", "")
+                    amount = txn.get("amount", 0)
+
+                    if cat_id and cat_id != "uncategorized":
+                        merged_totals[cat_id] = merged_totals.get(cat_id, 0) + amount
+                        newly_classified += 1
+                    else:
+                        still_uncat += 1
+
+                classification_summary["newly_classified"] = newly_classified
+                classification_summary["still_uncategorized"] = still_uncat
+
+                logger.info(
+                    f"Classified {newly_classified}/{len(uncategorized)} transactions"
+                )
+
+            except Exception as e:
+                logger.warning(f"Classification failed, scoring without it: {e}")
+
+        # --- Step 4: Calculate final score (post-classification) ---
+        score, breakdown = _calculate_score(
+            merged_totals, total_spending, best_practices_list
+        )
 
         # Build external data without transactions (already processed)
         external_data_for_agent = {
@@ -575,115 +611,15 @@ async def calculate_spending_score(consent_id: str, config: RunnableConfig) -> s
             "internal_transaction_count": len(internal_transactions),
             "external_transaction_count": len(external_transactions),
             "category_breakdown": breakdown,
-            "uncategorized_transactions": int_uncat + ext_uncat,
+            "classification_summary": classification_summary,
             "external_data": external_data_for_agent,
         }
 
         return json.dumps(result)
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"Error calculating spending score: {e.response.text}")
-        return f"Error calculating spending score: {e.response.json().get('detail', str(e))}"
+        logger.error(f"Error analyzing spending: {e.response.text}")
+        return f"Error analyzing spending: {e.response.json().get('detail', str(e))}"
     except Exception as e:
-        logger.error(f"Error calculating spending score: {e}")
-        return f"Error calculating spending score: {str(e)}"
-
-
-# ---------- Tool: classify_transactions ----------
-
-
-@tool
-async def classify_transactions(uncategorized_transactions: list[dict]) -> str:
-    """Classify uncategorized transactions using MongoDB Atlas Vector Search against MCC reference codes. Takes the uncategorized_transactions list from calculate_spending_score and returns each transaction with its matched MCC code, spending category, and confidence score.
-
-    Args:
-        uncategorized_transactions: List of transaction dicts from calculate_spending_score's uncategorized_transactions field. Each has: description, amount, merchant, mcc (empty), and optionally bank.
-    """
-    if not uncategorized_transactions:
-        return json.dumps({
-            "classifications": [],
-            "total_classified": 0,
-            "message": "No uncategorized transactions to classify",
-        })
-
-    try:
-        response = await http_client.post(
-            "/leafybank/mcc/classify",
-            json={"transactions": uncategorized_transactions},
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
-
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Error classifying transactions: {e.response.text}")
-        return f"Error classifying transactions: {e.response.json().get('detail', str(e))}"
-    except Exception as e:
-        logger.error(f"Error classifying transactions: {e}")
-        return f"Error classifying transactions: {str(e)}"
-
-
-# ---------- Tool: recalculate_spending_score ----------
-
-
-@tool
-async def recalculate_spending_score(
-    category_breakdown: list[dict],
-    total_spending: float,
-    classified_transactions: list[dict],
-) -> str:
-    """Recalculate the spending score after classifying previously uncategorized transactions. This is a local computation — no API calls. Takes the original category_breakdown and total_spending from calculate_spending_score, merges in the classified transaction amounts, and recalculates the score using the same algorithm.
-
-    Args:
-        category_breakdown: The category_breakdown array from the original calculate_spending_score result. Each item has: category_id, category_name, actual_amount, ideal_percentage, min_percentage, max_percentage.
-        total_spending: The total_spending value from the original calculate_spending_score result.
-        classified_transactions: The classifications array from classify_transactions. Each item has: CategoryId, CategoryName, amount, confidence.
-    """
-    try:
-        # Rebuild category_totals from the original breakdown
-        category_totals: dict[str, float] = {}
-        for cat in category_breakdown:
-            cat_id = cat["category_id"]
-            category_totals[cat_id] = cat.get("actual_amount", 0)
-
-        # Add classified transaction amounts to correct categories
-        newly_classified_count = 0
-        still_uncategorized = []
-        for txn in classified_transactions:
-            cat_id = txn.get("CategoryId", "")
-            amount = txn.get("amount", 0)
-
-            if cat_id and cat_id != "uncategorized":
-                category_totals[cat_id] = category_totals.get(cat_id, 0) + amount
-                newly_classified_count += 1
-            else:
-                still_uncategorized.append(txn)
-
-        # Rebuild best_practices structure from original breakdown for _calculate_score
-        best_practices_for_calc = []
-        for cat in category_breakdown:
-            best_practices_for_calc.append({
-                "CategoryId": cat["category_id"],
-                "CategoryName": cat["category_name"],
-                "IdealPercentage": cat["ideal_percentage"],
-                "MinPercentage": cat["min_percentage"],
-                "MaxPercentage": cat["max_percentage"],
-            })
-
-        # Recalculate using the same scoring algorithm
-        new_score, new_breakdown = _calculate_score(
-            category_totals, total_spending, best_practices_for_calc
-        )
-
-        result = {
-            "spending_score": new_score,
-            "total_spending": round(total_spending, 2),
-            "newly_classified_count": newly_classified_count,
-            "still_uncategorized_count": len(still_uncategorized),
-            "category_breakdown": new_breakdown,
-        }
-
-        return json.dumps(result)
-
-    except Exception as e:
-        logger.error(f"Error recalculating spending score: {e}")
-        return f"Error recalculating spending score: {str(e)}"
+        logger.error(f"Error analyzing spending: {e}")
+        return f"Error analyzing spending: {str(e)}"

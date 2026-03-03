@@ -15,9 +15,7 @@ from agent.tools.analysis_tools import (
     calculate_financial_position,
     fetch_customer_identification,
     find_user,
-    calculate_spending_score,
-    classify_transactions,
-    recalculate_spending_score,
+    analyze_spending,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,9 +25,7 @@ SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
 TOOLS = [
     find_user,
-    calculate_spending_score,
-    classify_transactions,
-    recalculate_spending_score,
+    analyze_spending,
     fetch_customer_identification,
     fetch_credit_score,
     get_underwriting_rules,
