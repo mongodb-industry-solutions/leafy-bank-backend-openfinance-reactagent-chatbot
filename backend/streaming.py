@@ -86,10 +86,16 @@ def _handle_custom_event(namespace: tuple, data) -> list[str]:
 
     agent_name = _extract_agent_name(namespace)
 
-    return [sse_event("progress", {
+    payload = {
         "agent": agent_name,
         "message": data.get("message", ""),
-    })]
+    }
+    # Pass through optional fields for input/output display
+    for key in ("step", "input", "output"):
+        if key in data:
+            payload[key] = data[key]
+
+    return [sse_event("progress", payload)]
 
 
 def _extract_agent_name(namespace: tuple) -> Optional[str]:

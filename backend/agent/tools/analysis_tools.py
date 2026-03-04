@@ -754,7 +754,14 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
     try:
         # --- Step 1: Fetch all data sources concurrently ---
         token = await get_bearer_token(user_id)
-        writer({"type": "progress", "message": "Fetching transactions from all banks..."})
+        ext_qs = f"consent_id={consent_id}" + (f"&profile={profile}" if profile else "")
+        writer({"type": "progress", "step": "fetch",
+                "message": "Fetching transactions from all banks...",
+                "input": json.dumps({"GET": [
+                    f"/leafybank/transactions/spending/{user_id}",
+                    f"/openfinance/customers/{user_id}/external-data?{ext_qs}",
+                    "/leafybank/spending/best-practices",
+                ]})})
 
         internal_task = http_client.get(
             f"/leafybank/transactions/secure/spending/{user_id}",
@@ -785,6 +792,23 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
         external_transactions = external_data.get("transactions", []) or []
         best_practices_list = best_practices.get("categories", []) or []
 
+        writer({"type": "progress", "step": "fetch",
+                "output": json.dumps({
+                    f"/leafybank/transactions/spending/{user_id}": {
+                        "transactions": f"[{len(internal_transactions)} items]",
+                    },
+                    f"/openfinance/customers/{user_id}/external-data": {
+                        "accounts": len(external_data.get("accounts", [])),
+                        "products": len(external_data.get("products", [])),
+                        "transactions": f"[{len(external_transactions)} items]",
+                        "repayment_history": len(external_data.get("repayment_history", [])),
+                        "consent_status": external_data.get("consent_status"),
+                    },
+                    "/leafybank/spending/best-practices": {
+                        "categories": f"[{len(best_practices_list)} items]",
+                    },
+                })})
+
         logger.info(
             f"Fetched {len(internal_transactions)} internal txns, "
             f"{len(external_transactions)} external txns, "
@@ -793,6 +817,15 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
 
         # --- Step 2: Categorize all transactions by MCC ---
         mcc_map = _build_mcc_to_category(best_practices_list)
+        total_txns = len(internal_transactions) + len(external_transactions)
+
+        writer({"type": "progress", "step": "categorize",
+                "message": f"Categorizing {total_txns} transactions by MCC code...",
+                "input": json.dumps({
+                    "internal_transactions": len(internal_transactions),
+                    "external_transactions": len(external_transactions),
+                    "mcc_codes_in_lookup": len(mcc_map),
+                })})
 
         int_totals, int_spending, int_uncat = _categorize_internal_transactions(
             internal_transactions, mcc_map
@@ -807,8 +840,13 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
 
         total_spending = int_spending + ext_spending
         uncategorized = int_uncat + ext_uncat
-        total_txns = len(internal_transactions) + len(external_transactions)
-        writer({"type": "progress", "message": f"Categorized {total_txns} transactions"})
+
+        writer({"type": "progress", "step": "categorize",
+                "output": json.dumps({
+                    "category_totals": {k: round(v, 2) for k, v in merged_totals.items()},
+                    "uncategorized": len(uncategorized),
+                    "total_spending": round(total_spending, 2),
+                })})
 
         # --- Step 3: Classify uncategorized transactions via vector search ---
         classification_summary = {
@@ -818,14 +856,20 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
         }
 
         if uncategorized:
-            writer({"type": "progress", "message": f"Classifying {len(uncategorized)} untagged transactions..."})
+            classify_body = {"transactions": uncategorized}
+            writer({"type": "progress", "step": "classify",
+                    "message": f"Classifying {len(uncategorized)} untagged transactions...",
+                    "input": json.dumps({
+                        "POST": "/leafybank/mcc/classify",
+                        "body": classify_body,
+                    })})
             logger.info(
                 f"Classifying {len(uncategorized)} uncategorized transactions via vector search"
             )
             try:
                 classify_resp = await http_client.post(
                     "/leafybank/mcc/classify",
-                    json={"transactions": uncategorized},
+                    json=classify_body,
                 )
                 classify_resp.raise_for_status()
                 classifications = classify_resp.json().get("classifications", [])
@@ -846,6 +890,9 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
                 classification_summary["newly_classified"] = newly_classified
                 classification_summary["still_uncategorized"] = still_uncat
 
+                writer({"type": "progress", "step": "classify",
+                        "output": json.dumps(classify_resp.json())})
+
                 logger.info(
                     f"Classified {newly_classified}/{len(uncategorized)} transactions"
                 )
@@ -856,10 +903,21 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
             logger.info("All transactions have MCC codes — classification not needed")
 
         # --- Step 4: Calculate final score (post-classification) ---
-        writer({"type": "progress", "message": "Computing final spending score..."})
+        writer({"type": "progress", "step": "score",
+                "message": "Computing final spending score...",
+                "input": json.dumps({
+                    "category_totals": {k: round(v, 2) for k, v in merged_totals.items()},
+                    "total_spending": round(total_spending, 2),
+                    "best_practices_count": len(best_practices_list),
+                })})
         score, breakdown = _calculate_score(
             merged_totals, total_spending, best_practices_list
         )
+        writer({"type": "progress", "step": "score",
+                "output": json.dumps({
+                    "spending_score": score,
+                    "category_breakdown": breakdown,
+                })})
 
         # Build external data without transactions (already processed)
         external_data_for_agent = {

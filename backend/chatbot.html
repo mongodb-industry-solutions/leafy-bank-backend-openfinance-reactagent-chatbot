@@ -677,21 +677,54 @@ function addStepDetail(tool, args) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function addProgressDetail(message) {
+function addProgressStart(step, message, inputData) {
   if (!_stepDetails) return;
-  // Complete any previous pending progress detail
-  const pending = _stepDetails.querySelectorAll('.step-detail[data-progress="pending"]');
-  pending.forEach(item => {
-    item.setAttribute("data-progress", "done");
-    const icon = item.querySelector("span");
-    if (icon) { icon.className = "icon-done"; icon.innerHTML = "&#10003;"; }
-  });
-  // Add new progress detail
+  let inputHtml = "";
+  if (inputData) {
+    let formatted;
+    try { formatted = JSON.stringify(JSON.parse(inputData), null, 2); }
+    catch (e) { formatted = inputData; }
+    inputHtml = `
+      <div class="tool-io">
+        <div class="tool-label input-label">input</div>
+        <div class="tool-input">${escapeHtml(formatted)}</div>
+      </div>`;
+  }
   const item = document.createElement("div");
   item.className = "step-detail";
-  item.setAttribute("data-progress", "pending");
-  item.innerHTML = `<div><span class="icon-pending">&#9679;</span> ${escapeHtml(message)}</div>`;
+  if (step) item.setAttribute("data-step", step);
+  item.innerHTML = `
+    <div><span class="icon-pending">&#9679;</span> ${escapeHtml(message)}</div>
+    ${inputHtml}
+  `;
   _stepDetails.appendChild(item);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addProgressComplete(step, outputData) {
+  if (!_stepDetails || !step) return;
+  const items = _stepDetails.querySelectorAll(`.step-detail[data-step="${step}"]`);
+  const item = items.length ? items[items.length - 1] : null;
+  if (!item) return;
+
+  const icon = item.querySelector("span");
+  if (icon) { icon.className = "icon-done"; icon.innerHTML = "&#10003;"; }
+
+  if (outputData) {
+    let formatted;
+    try { formatted = JSON.stringify(JSON.parse(outputData), null, 2); }
+    catch (e) { formatted = outputData; }
+    const ioContainer = item.querySelector(".tool-io") || document.createElement("div");
+    if (!item.querySelector(".tool-io")) {
+      ioContainer.className = "tool-io";
+      item.appendChild(ioContainer);
+    }
+    ioContainer.insertAdjacentHTML("beforeend", `
+      <div class="tool-label output-label">output</div>
+      <div class="tool-output">${escapeHtml(formatted)}</div>
+    `);
+  }
+
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -774,15 +807,6 @@ function handleSSEEvent(event) {
       break;
 
     case "tool_result":
-      // Complete any pending progress details before completing the tool
-      if (_stepDetails) {
-        const pending = _stepDetails.querySelectorAll('.step-detail[data-progress="pending"]');
-        pending.forEach(item => {
-          item.setAttribute("data-progress", "done");
-          const icon = item.querySelector("span");
-          if (icon) { icon.className = "icon-done"; icon.innerHTML = "&#10003;"; }
-        });
-      }
       completeStepDetail(payload.tool, payload.summary);
       updateStepIndicator(payload.tool + "() completed");
       break;
@@ -792,8 +816,12 @@ function handleSSEEvent(event) {
       break;
 
     case "progress":
-      addProgressDetail(payload.message);
-      updateStepIndicator(payload.message);
+      if (payload.message) {
+        addProgressStart(payload.step, payload.message, payload.input);
+        updateStepIndicator(payload.message);
+      } else if (payload.output) {
+        addProgressComplete(payload.step, payload.output);
+      }
       break;
 
     case "response":
