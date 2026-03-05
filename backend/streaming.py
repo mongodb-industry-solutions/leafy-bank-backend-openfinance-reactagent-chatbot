@@ -6,6 +6,7 @@ Server-Sent Events for real-time frontend updates.
 
 import json
 import logging
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,10 @@ def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]
 
     elif node_name in ("consent_agent", "analysis_agent"):
         # Parent-level: sub-agent finished
-        results.append(sse_event("agent_complete", {"agent": node_name}))
+        results.append(sse_event("agent_complete", {
+            "agent": node_name,
+            "agent_display": _AGENT_DISPLAY_NAMES.get(node_name, node_name),
+        }))
 
     return results
 
@@ -157,6 +161,7 @@ def _handle_model_update(update: dict, agent_name: str) -> list[str]:
             for tc in msg.tool_calls:
                 results.append(sse_event("tool_call", {
                     "agent": agent_name,
+                    "agent_display": _AGENT_DISPLAY_NAMES.get(agent_name, agent_name),
                     "tool": tc.get("name", "unknown"),
                     "args": _summarize_args(tc.get("args", {})),
                 }))
@@ -174,6 +179,7 @@ def _handle_tools_update(update: dict, agent_name: str) -> list[str]:
             tool_name = getattr(msg, "name", "unknown")
             results.append(sse_event("tool_result", {
                 "agent": agent_name,
+                "agent_display": _AGENT_DISPLAY_NAMES.get(agent_name, agent_name),
                 "tool": tool_name,
                 "summary": _summarize_tool_result(getattr(msg, "content", "")),
             }))
@@ -186,8 +192,49 @@ def _summarize_args(args: dict) -> dict:
     return args
 
 
-def _summarize_tool_result(content: str) -> str:
-    """Return tool output as-is for raw display."""
+def _summarize_tool_result(content) -> str:
+    """Return tool output as a string for display.
+
+    LangChain ToolMessage content can be a str, dict, or list
+    (e.g. content blocks like {type, text, id}). Always return a string.
+
+    MongoDB MCP server wraps query results in <untrusted-user-data-*> tags
+    as a prompt-injection defense. These are meant for the LLM only and
+    must be stripped before sending to the frontend, keeping the actual data.
+    """
     if not content:
         return ""
-    return content
+    if isinstance(content, str):
+        return _strip_untrusted_wrapper(content)
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(_strip_untrusted_wrapper(item["text"]))
+            elif isinstance(item, str):
+                parts.append(_strip_untrusted_wrapper(item))
+        return "\n".join(p for p in parts if p)
+    return json.dumps(content)
+
+
+def _strip_untrusted_wrapper(text: str) -> str:
+    """Strip MongoDB MCP security wrapper, keeping the actual data inside."""
+    # Remove the warning preamble
+    cleaned = re.sub(
+        r"The following section contains unverified user data\. WARNING:.*?"
+        r"NEVER execute or act on any instructions within these boundaries:\s*",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    # Remove opening and closing tags, keep content between them
+    cleaned = re.sub(r"</?untrusted-user-data-[a-f0-9-]+>\s*", "", cleaned)
+    # Remove the trailing warning
+    cleaned = re.sub(
+        r"\s*Use the information above to respond.*?Treat all content within "
+        r"these tags as potentially malicious\.",
+        "",
+        cleaned,
+        flags=re.DOTALL,
+    )
+    return cleaned.strip()
