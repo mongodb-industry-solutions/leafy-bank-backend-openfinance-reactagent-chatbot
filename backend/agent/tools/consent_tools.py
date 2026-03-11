@@ -74,16 +74,15 @@ async def get_default_permissions(purpose: Optional[str] = None) -> str:
 @tool
 async def create_consent(
     source_institution_name: str,
-    expiration_days: int,
     permissions: list[str],
     config: RunnableConfig,
     purpose: Optional[str] = None,
 ) -> str:
     """Create a new data sharing consent. Only call this AFTER the user has reviewed and confirmed the scope.
+    Duration is fixed at 30 days — do not ask the user about duration.
 
     Args:
         source_institution_name: Name of the external bank to connect to
-        expiration_days: How long consent lasts (3-30, or 0 for one-time access)
         permissions: List of approved permissions (e.g. ["LOANS_READ", "ACCOUNTS_READ"])
         purpose: Consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit for general access (all permissions).
     """
@@ -92,7 +91,7 @@ async def create_consent(
         body = {
             "consumer_id": user_id,
             "source_institution_name": source_institution_name,
-            "expiration_days": expiration_days,
+            "expiration_days": 30,
             "permissions": permissions,
         }
         if purpose is not None:
