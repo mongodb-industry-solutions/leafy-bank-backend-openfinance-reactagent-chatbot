@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
+from state import ConsentInfo
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,10 @@ class RouterDecision(BaseModel):
 _supervisor_llm_structured = _supervisor_llm.with_structured_output(RouterDecision)
 
 
-def _extract_consent_info_from_messages(messages: list) -> tuple[Optional[str], Optional[str]]:
-    """Scan recent tool messages for an approved consent, return (consent_id, purpose).
+def _extract_new_consent_from_messages(
+    messages: list, existing_ids: set
+) -> Optional[ConsentInfo]:
+    """Scan recent tool messages for a NEWLY approved consent not already tracked.
 
     Searches backward (most recent first), limited to the last 20 tool messages.
     If the approval message doesn't include purpose, continues scanning for the
@@ -49,6 +52,7 @@ def _extract_consent_info_from_messages(messages: list) -> tuple[Optional[str], 
     tool_count = 0
     consent_id = None
     purpose = None
+    institution = None
 
     for msg in reversed(messages):
         if not hasattr(msg, "type") or msg.type != "tool":
@@ -66,40 +70,60 @@ def _extract_consent_info_from_messages(messages: list) -> tuple[Optional[str], 
             status = (data.get("status") or "").upper()
 
             if status == "AUTHORISED" and not consent_id:
-                consent_id = data.get("consent_id")
-                purpose = data.get("purpose")
-                if consent_id and purpose:
-                    return consent_id, purpose
+                cid = data.get("consent_id")
+                if cid and cid not in existing_ids:
+                    consent_id = cid
+                    purpose = data.get("purpose")
+                    institution = data.get("source_institution", "")
+                    if consent_id and purpose:
+                        return ConsentInfo(
+                            consent_id=consent_id,
+                            purpose=purpose,
+                            institution=institution,
+                        )
             elif (
                 consent_id
                 and data.get("consent_id") == consent_id
                 and data.get("purpose")
             ):
                 # Found the create_consent message with purpose for same consent
-                return consent_id, data["purpose"]
+                return ConsentInfo(
+                    consent_id=consent_id,
+                    purpose=data["purpose"],
+                    institution=institution or data.get("source_institution", ""),
+                )
         except (json.JSONDecodeError, TypeError):
             continue
 
-    return consent_id, purpose
+    if consent_id:
+        return ConsentInfo(
+            consent_id=consent_id,
+            purpose=purpose,
+            institution=institution or "",
+        )
+    return None
 
 
 async def supervisor_node(state: dict) -> dict:
     """Route the conversation to the appropriate agent or respond directly."""
     messages = state.get("messages", [])
-    active_consent_id = state.get("active_consent_id")
-    active_consent_purpose = state.get("active_consent_purpose")
+    active_consents: list[ConsentInfo] = list(state.get("active_consents") or [])
+    existing_ids = {c["consent_id"] for c in active_consents}
 
     # Check if a consent was just approved (not yet tracked in state)
     newly_approved = False
-    if not active_consent_id:
-        found_id, found_purpose = _extract_consent_info_from_messages(messages)
-        if found_id:
-            active_consent_id = found_id
-            active_consent_purpose = found_purpose
-            newly_approved = True
-            logger.info(
-                f"Supervisor detected approved consent: {found_id}, purpose: {found_purpose}"
-            )
+    new_consent = _extract_new_consent_from_messages(messages, existing_ids)
+    if new_consent:
+        active_consents.append(new_consent)
+        newly_approved = True
+        logger.info(
+            f"Supervisor detected approved consent: {new_consent['consent_id']}, "
+            f"purpose: {new_consent['purpose']}, institution: {new_consent['institution']}"
+        )
+
+    # Derive latest consent info for handoff messages
+    latest_consent = active_consents[-1] if active_consents else None
+    latest_purpose = latest_consent["purpose"] if latest_consent else None
 
     # Hard guard: when consent was just approved, always pause and confirm
     # with the user before routing to analysis. This is deterministic — the
@@ -122,19 +146,18 @@ async def supervisor_node(state: dict) -> dict:
             )
             return {
                 "next": "FINISH",
-                "active_consent_id": active_consent_id,
-                "active_consent_purpose": active_consent_purpose,
+                "active_consents": active_consents,
             }
 
         # Fallback: consent agent didn't respond (edge case) — generate
         # a confirmation message so the user always sees one.
-        if "LOAN_PORTABILITY" in (active_consent_purpose or "").upper():
+        if "LOAN_PORTABILITY" in (latest_purpose or "").upper():
             analysis_desc = (
                 "I can now analyze your external bank data to evaluate loan "
                 "portability — this checks your spending patterns, credit score, "
                 "and finds better Leafy Bank rates."
             )
-        elif (active_consent_purpose or "").upper() == "FINANCIAL_ADVICE":
+        elif (latest_purpose or "").upper() == "FINANCIAL_ADVICE":
             analysis_desc = (
                 "I can now analyze your spending across all your accounts, "
                 "compare against best practices, and provide a financial "
@@ -146,17 +169,25 @@ async def supervisor_node(state: dict) -> dict:
                 "bank and provide insights."
             )
 
+        bank_count = len(active_consents)
+        bank_summary = ""
+        if bank_count > 1:
+            banks = [c["institution"] for c in active_consents if c["institution"]]
+            bank_summary = (
+                f" You now have {bank_count} bank connections active: "
+                f"{', '.join(banks)}."
+            )
+
         confirmation_msg = (
             f"Your consent is now active! Your data from the external bank "
-            f"is securely connected.\n\n"
+            f"is securely connected.{bank_summary}\n\n"
             f"{analysis_desc}\n\n"
             f"Would you like me to proceed with the analysis?"
         )
         logger.info("Supervisor: consent just approved, pausing for user confirmation (fallback)")
         return {
             "next": "FINISH",
-            "active_consent_id": active_consent_id,
-            "active_consent_purpose": active_consent_purpose,
+            "active_consents": active_consents,
             "messages": [AIMessage(content=confirmation_msg)],
         }
 
@@ -174,17 +205,19 @@ async def supervisor_node(state: dict) -> dict:
         logger.info("Supervisor: sub-agent responded, returning to user")
         return {
             "next": "FINISH",
-            "active_consent_id": active_consent_id,
-            "active_consent_purpose": active_consent_purpose,
+            "active_consents": active_consents,
         }
 
     # Build context for LLM
     context_parts = []
-    if active_consent_id:
-        context_parts.append(f"Active consent: {active_consent_id}")
-        context_parts.append(f"Consent purpose: {active_consent_purpose}")
+    if active_consents:
+        context_parts.append(f"Active consents ({len(active_consents)}):")
+        for c in active_consents:
+            context_parts.append(
+                f"  - {c['consent_id']} | {c['institution']} | purpose: {c['purpose']}"
+            )
     else:
-        context_parts.append("No active consent.")
+        context_parts.append("No active consents.")
 
     context = "\n".join(context_parts)
     system_msg = SystemMessage(
@@ -199,20 +232,22 @@ async def supervisor_node(state: dict) -> dict:
 
     result = {
         "next": decision.next,
-        "active_consent_id": active_consent_id,
-        "active_consent_purpose": active_consent_purpose,
+        "active_consents": active_consents,
     }
 
     # When FINISH, add the supervisor's response as an AI message
     if decision.next == "FINISH" and decision.response:
         result["messages"] = [AIMessage(content=decision.response)]
-    # When routing to portability_agent with an active consent, inject a handoff
-    # message so the portability agent has consent_id clearly in recent history
-    elif decision.next == "portability_agent" and active_consent_id:
+    # When routing to portability_agent with active consents, inject a handoff
+    # message so the portability agent has consent info clearly in recent history
+    elif decision.next == "portability_agent" and active_consents:
+        consents_summary = json.dumps(
+            [{"consent_id": c["consent_id"], "institution": c["institution"],
+              "purpose": c["purpose"]} for c in active_consents]
+        )
         handoff = (
             f"Routing to portability agent. "
-            f"Active consent ID: {active_consent_id} "
-            f"| Purpose: {active_consent_purpose}"
+            f"Active consents: {consents_summary}"
         )
         if decision.response:
             handoff = f"{decision.response}\n\n[{handoff}]"

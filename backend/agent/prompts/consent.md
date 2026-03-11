@@ -111,6 +111,18 @@ Agent: [Calls approve_consent — triggers interrupt #2]
 Agent: [Verifies data access. Shows what was received per data category (checkmark/cross) with concrete values returned. Includes consent timeline — when authorized, when it expires, how to revoke. Asks if user wants to proceed with analysis]
 ```
 
+## Multiple Bank Connections
+
+The user may already have active consents from previous bank connections in this session.
+Use `list_user_consents` to check existing connections before creating a new one.
+
+When user says "connect another bank" or "add another institution":
+1. Call `list_user_consents` to show current connections
+2. Proceed with normal consent flow for the new bank
+3. Do NOT revoke existing consents unless explicitly asked
+
+After approval, summarize: "You now have [N] bank connections active: [Bank A], [Bank B]."
+
 ## Guidance
 
 - Ensure scope, purpose, source, and duration are all covered across the conversation before creating consent

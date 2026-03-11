@@ -7,9 +7,13 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
 
+class ConsentInfo(TypedDict):
+    consent_id: str
+    purpose: Optional[str]
+    institution: str
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     next: str  # "consent_agent" | "portability_agent" | "internal_data_agent" | "FINISH"
-    active_consent_id: Optional[str]
-    active_consent_purpose: Optional[str]
-    source_institution: Optional[str]
+    active_consents: list[ConsentInfo]  # Multiple banks

@@ -204,19 +204,20 @@ async def evaluate_portability_offer(
     try:
         # --- Validate consent purpose vs loan sub-type ---
         expected_type = _PURPOSE_TO_LOAN_TYPE.get(consent_purpose)
+        loan_type_mismatch = None
         if expected_type and loan_sub_type and loan_sub_type != expected_type:
-            return json.dumps({
-                "status": "loan_type_mismatch",
+            loan_type_mismatch = {
                 "consent_purpose": consent_purpose,
                 "expected_loan_type": expected_type,
                 "actual_loan_type": loan_sub_type,
                 "message": (
-                    f"The consent purpose is {consent_purpose} (expects {expected_type} loans), "
-                    f"but the external loan is {loan_sub_type}. These are different loan types — "
-                    f"comparing them would produce misleading results. "
-                    f"Ask the user how they'd like to proceed."
+                    f"This bank's loan is {loan_sub_type}, but the consent purpose "
+                    f"{consent_purpose} expects {expected_type}. This bank's spending "
+                    f"data is still useful for overall analysis. If you have other "
+                    f"connected banks, call analyze_spending for those consents to "
+                    f"find the {expected_type} loan for portability comparison."
                 ),
-            })
+            }
 
         # --- Fetch underwriting rules and matching products concurrently ---
         writer({"type": "progress", "message": "Evaluating your portability offer..."})
@@ -411,6 +412,8 @@ async def evaluate_portability_offer(
             "offers": offers,
             "summary": "".join(parts),
         }
+        if loan_type_mismatch:
+            result["loan_type_warning"] = loan_type_mismatch
         return json.dumps(result)
 
     except httpx.HTTPStatusError as e:
