@@ -88,6 +88,7 @@ async def create_consent(
     """
     user_id = config["configurable"]["user_id"]
     try:
+        token = await get_bearer_token(user_id)
         body = {
             "consumer_id": user_id,
             "source_institution_name": source_institution_name,
@@ -96,7 +97,11 @@ async def create_consent(
         }
         if purpose is not None:
             body["purpose"] = purpose.upper()
-        response = await http_client.post("/openfinance/secure/consents/", json=body)
+        response = await http_client.post(
+            "/openfinance/secure/consents/",
+            json=body,
+            headers={"Authorization": f"Bearer {token}"},
+        )
         response.raise_for_status()
         data = response.json()
         consent = data.get("consent", data)
@@ -118,14 +123,19 @@ async def create_consent(
 
 
 @tool
-async def get_consent(consent_id: str) -> str:
+async def get_consent(consent_id: str, config: RunnableConfig) -> str:
     """Get the current details and status of a specific consent.
 
     Args:
         consent_id: The consent ID (URN format)
     """
+    user_id = config["configurable"]["user_id"]
     try:
-        response = await http_client.get(f"/openfinance/secure/consents/{consent_id}")
+        token = await get_bearer_token(user_id)
+        response = await http_client.get(
+            f"/openfinance/secure/consents/{consent_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         response.raise_for_status()
         data = response.json()
         consent = data.get("consent", data)
@@ -149,9 +159,11 @@ async def list_user_consents(config: RunnableConfig) -> str:
     """List all consents for the current user."""
     user_id = config["configurable"]["user_id"]
     try:
+        token = await get_bearer_token(user_id)
         response = await http_client.get(
             "/openfinance/secure/consents/",
             params={"consumer_id": user_id},
+            headers={"Authorization": f"Bearer {token}"},
         )
         response.raise_for_status()
         data = response.json()
@@ -198,13 +210,18 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
         consent_id: The consent ID to approve
     """
     # Fetch consent details so the interrupt shows what the user is approving
+    user_id = config["configurable"]["user_id"]
     interrupt_payload = {
         "type": "CONSENT_APPROVAL",
         "consent_id": consent_id,
         "message": "Please review and confirm that you approve this data-sharing consent.",
     }
     try:
-        response = await http_client.get(f"/openfinance/secure/consents/{consent_id}")
+        token = await get_bearer_token(user_id)
+        response = await http_client.get(
+            f"/openfinance/secure/consents/{consent_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         response.raise_for_status()
         data = response.json()
         consent = data.get("consent", data)
