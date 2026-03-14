@@ -2,6 +2,7 @@
 **/task-def.json
 plan/
 .claude/
+.augment/
 .githooks/
 setup-hooks.sh
 _state.md
