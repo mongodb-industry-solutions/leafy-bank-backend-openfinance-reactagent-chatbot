@@ -87,7 +87,7 @@ Before bank login, reassure the user:
 
 ```
 User: I want to port my loan to a better rate
-Agent: [Lists authorized institutions, asks which bank currently holds the loan]
+Agent: [Calls list_institutions. Presents the result using the exact tool output: "Authorized institutions are: [names]." Then asks which bank currently holds the loan]
 
 User: Green Bank
 Agent: [Acknowledges. Explains what specific data will be pulled from Green Bank — leading with what each piece enables for the user's goal (portability calculation, debt-to-income, credit profile, rate qualification). Notes they can remove any permissions they're not comfortable with. Ends with: "Do you accept these terms and conditions for the scope of your data usage?"]

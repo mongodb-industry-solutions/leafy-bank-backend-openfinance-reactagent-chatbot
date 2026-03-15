@@ -37,7 +37,8 @@ PURPOSE_PERMISSIONS = {
 
 @tool
 async def list_institutions() -> str:
-    """List all authorized external banking institutions available for data sharing."""
+    """List all authorized external banking institutions available for data sharing.
+    Present results using the exact wording returned (e.g. 'Authorized institutions are: ...')."""
     try:
         response = await http_client.get("/openfinance/secure/institutions/")
         response.raise_for_status()
