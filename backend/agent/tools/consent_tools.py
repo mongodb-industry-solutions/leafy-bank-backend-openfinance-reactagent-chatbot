@@ -37,14 +37,14 @@ PURPOSE_PERMISSIONS = {
 
 @tool
 async def list_institutions() -> str:
-    """List all available external banking institutions that users can connect to for data sharing."""
+    """List all authorized external banking institutions available for data sharing."""
     try:
         response = await http_client.get("/openfinance/secure/institutions/")
         response.raise_for_status()
         data = response.json()
         institutions = data.get("institutions", [])
         names = [inst.get("InstitutionName", "Unknown") for inst in institutions]
-        return f"Available institutions: {', '.join(names)}"
+        return f"Authorized institutions are: {', '.join(names)}"
     except Exception as e:
         logger.error(f"Error listing institutions: {e}")
         return f"Error fetching institutions: {str(e)}"
