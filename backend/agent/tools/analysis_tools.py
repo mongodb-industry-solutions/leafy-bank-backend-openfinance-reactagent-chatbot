@@ -212,10 +212,9 @@ async def evaluate_portability_offer(
                 "actual_loan_type": loan_sub_type,
                 "message": (
                     f"This bank's loan is {loan_sub_type}, but the consent purpose "
-                    f"{consent_purpose} expects {expected_type}. This bank's spending "
-                    f"data is still useful for overall analysis. If you have other "
-                    f"connected banks, call analyze_spending for those consents to "
-                    f"find the {expected_type} loan for portability comparison."
+                    f"{consent_purpose} expects {expected_type}. The spending data is "
+                    f"still valid for scoring. Look in the banks_analyzed response "
+                    f"from analyze_spending for another bank's {expected_type} loan."
                 ),
             }
 
@@ -458,9 +457,9 @@ async def calculate_financial_position(
 
     Args:
         user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
-        consent_id: The consent ID with ACCOUNTS_BALANCES_READ and LOANS_READ permissions
-        connected_external_accounts: List of external account IDs to include (from external_data.accounts)
-        connected_external_products: List of external product IDs to include (from external_data.products)
+        consent_id: Any active consent ID for auth validation. The actual data scope is determined by connected_external_accounts and connected_external_products lists.
+        connected_external_accounts: List of external account IDs to include (from banks_analyzed[].accounts across all banks)
+        connected_external_products: List of external product IDs to include (from banks_analyzed[].products across all banks)
     """
     user_id = config["configurable"]["user_id"]
     try:
@@ -738,11 +737,11 @@ def _calculate_score(
 
 
 @tool
-async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
-    """Analyze spending health across all bank accounts. Fetches transactions from both Leafy Bank (internal) and external banks, classifies any uncategorized transactions using MongoDB Atlas Vector Search, and returns a final spending score (0-100) with per-category breakdown. All external data (accounts, loans, repayment history) is included in the response.
+async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> str:
+    """Analyze spending health across all connected bank accounts. Fetches transactions from Leafy Bank (internal) and ALL external banks (one per consent_id), classifies any uncategorized transactions using MongoDB Atlas Vector Search, and returns a single aggregated spending score (0-100) with per-category breakdown. Per-bank external data (accounts, loans, repayment history) is included in `banks_analyzed`.
 
     Args:
-        consent_id: The consent ID authorizing external data retrieval
+        consent_ids: List of consent IDs — one per connected external bank
     """
     user_id = config["configurable"]["user_id"]
     profile = config["configurable"].get("profile")
@@ -757,76 +756,132 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
     try:
         # --- Step 1: Fetch all data sources concurrently ---
         token = await get_bearer_token(user_id)
-        ext_qs = f"consent_id={consent_id}" + (f"&profile={profile}" if profile else "")
+        bank_count = len(consent_ids)
         writer({"type": "progress", "step": "fetch",
-                "message": "Fetching transactions from all banks...",
+                "message": f"Fetching transactions from Leafy Bank and {bank_count} external bank(s)...",
                 "input": json.dumps({"GET": [
                     f"/leafybank/transactions/spending/{user_id}",
-                    f"/openfinance/customers/{user_id}/external-data?{ext_qs}",
+                    *[f"/openfinance/customers/{user_id}/external-data?consent_id={cid}"
+                      for cid in consent_ids],
                     "/leafybank/spending/best-practices",
                 ]})})
 
         internal_task = http_client.get(
             f"/leafybank/transactions/secure/spending/{user_id}",
         )
-        external_params = {"consent_id": consent_id}
-        if profile:
-            external_params["profile"] = profile
-        external_task = http_client.get(
-            f"/openfinance/secure/customers/{user_id}/external-data",
-            params=external_params,
-            headers={"Authorization": f"Bearer {token}"},
-        )
         best_practices_task = http_client.get("/leafybank/spending/best-practices")
 
-        internal_resp, external_resp, bp_resp = await asyncio.gather(
-            internal_task, external_task, best_practices_task
-        )
+        # Build one external fetch task per consent
+        external_tasks = []
+        for cid in consent_ids:
+            ext_params = {"consent_id": cid}
+            if profile:
+                ext_params["profile"] = profile
+            task = http_client.get(
+                f"/openfinance/secure/customers/{user_id}/external-data",
+                params=ext_params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            external_tasks.append((cid, task))
 
+        # Run all tasks concurrently
+        all_tasks = [internal_task, best_practices_task] + [t for _, t in external_tasks]
+        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
+
+        internal_resp = all_results[0]
+        bp_resp = all_results[1]
+        external_results = list(zip(
+            [cid for cid, _ in external_tasks],
+            all_results[2:],
+        ))
+
+        # Internal + best practices must succeed
+        if isinstance(internal_resp, Exception):
+            raise internal_resp
         internal_resp.raise_for_status()
-        external_resp.raise_for_status()
+        if isinstance(bp_resp, Exception):
+            raise bp_resp
         bp_resp.raise_for_status()
 
         internal_data = internal_resp.json()
-        external_data = external_resp.json()
         best_practices = bp_resp.json()
-
         internal_transactions = internal_data.get("transactions", []) or []
-        external_transactions = external_data.get("transactions", []) or []
         best_practices_list = best_practices.get("categories", []) or []
+
+        # Process external responses — graceful per-bank failure
+        banks_analyzed = []
+        all_external_transactions = []
+        errors = []
+
+        for cid, resp in external_results:
+            if isinstance(resp, Exception):
+                logger.warning(f"External data fetch failed for consent {cid}: {resp}")
+                errors.append({"consent_id": cid, "error": str(resp)})
+                continue
+            try:
+                resp.raise_for_status()
+                data = resp.json()
+                txns = data.get("transactions", []) or []
+                all_external_transactions.extend(txns)
+                banks_analyzed.append({
+                    "consent_id": cid,
+                    "institution": data.get("source_institution", ""),
+                    "transaction_count": len(txns),
+                    "accounts": data.get("accounts"),
+                    "products": data.get("products"),
+                    "repayment_history": data.get("repayment_history"),
+                    "consent_status": data.get("consent_status"),
+                    "purpose": data.get("purpose"),
+                    "status": "success",
+                })
+            except Exception as e:
+                logger.warning(f"External data fetch failed for consent {cid}: {e}")
+                errors.append({"consent_id": cid, "error": str(e)})
+
+        if not banks_analyzed:
+            error_details = "; ".join(e["error"] for e in errors) if errors else "unknown"
+            return f"Error analyzing spending: No external bank data could be retrieved. Errors: {error_details}"
+
+        # Build per-bank summary for progress output
+        banks_summary = {}
+        for bank in banks_analyzed:
+            banks_summary[bank["institution"]] = {
+                "accounts": len(bank.get("accounts") or []),
+                "products": len(bank.get("products") or []),
+                "transactions": f"[{bank['transaction_count']} items]",
+                "repayment_history": len(bank.get("repayment_history") or []),
+                "consent_status": bank.get("consent_status"),
+            }
 
         writer({"type": "progress", "step": "fetch",
                 "output": json.dumps({
                     f"/leafybank/transactions/spending/{user_id}": {
                         "transactions": f"[{len(internal_transactions)} items]",
                     },
-                    f"/openfinance/customers/{user_id}/external-data": {
-                        "accounts": len(external_data.get("accounts", [])),
-                        "products": len(external_data.get("products", [])),
-                        "transactions": f"[{len(external_transactions)} items]",
-                        "repayment_history": len(external_data.get("repayment_history", [])),
-                        "consent_status": external_data.get("consent_status"),
-                    },
+                    "external_banks": banks_summary,
+                    "errors": errors,
                     "/leafybank/spending/best-practices": {
                         "categories": f"[{len(best_practices_list)} items]",
                     },
                 })})
 
+        total_ext_txn_count = len(all_external_transactions)
         logger.info(
             f"Fetched {len(internal_transactions)} internal txns, "
-            f"{len(external_transactions)} external txns, "
+            f"{total_ext_txn_count} external txns from {len(banks_analyzed)} bank(s), "
             f"{len(best_practices_list)} categories"
         )
 
         # --- Step 2: Categorize all transactions by MCC ---
         mcc_map = _build_mcc_to_category(best_practices_list)
-        total_txns = len(internal_transactions) + len(external_transactions)
+        total_txns = len(internal_transactions) + total_ext_txn_count
 
         writer({"type": "progress", "step": "categorize",
                 "message": f"Categorizing {total_txns} transactions by MCC code...",
                 "input": json.dumps({
                     "internal_transactions": len(internal_transactions),
-                    "external_transactions": len(external_transactions),
+                    "external_transactions": total_ext_txn_count,
+                    "banks_analyzed": len(banks_analyzed),
                     "mcc_codes_in_lookup": len(mcc_map),
                 })})
 
@@ -834,7 +889,7 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
             internal_transactions, mcc_map
         )
         ext_totals, ext_spending, ext_uncat = _categorize_external_transactions(
-            external_transactions, mcc_map
+            all_external_transactions, mcc_map
         )
 
         merged_totals: dict[str, float] = {}
@@ -922,19 +977,15 @@ async def analyze_spending(consent_id: str, config: RunnableConfig) -> str:
                     "category_breakdown": breakdown,
                 })})
 
-        # Build external data without transactions (already processed)
-        external_data_for_agent = {
-            k: v for k, v in external_data.items() if k != "transactions"
-        }
-
         result = {
             "spending_score": score,
             "total_spending": round(total_spending, 2),
             "internal_transaction_count": len(internal_transactions),
-            "external_transaction_count": len(external_transactions),
+            "external_transaction_count": total_ext_txn_count,
             "category_breakdown": breakdown,
             "classification_summary": classification_summary,
-            "external_data": external_data_for_agent,
+            "banks_analyzed": banks_analyzed,
+            "errors": errors,
         }
 
         return json.dumps(result)
