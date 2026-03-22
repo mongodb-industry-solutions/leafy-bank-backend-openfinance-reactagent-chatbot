@@ -18,5 +18,8 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 CHAT_COMPLETIONS_MODEL_ID = os.getenv("CHAT_COMPLETIONS_MODEL_ID")
 
 # Open Finance Backend
+SUGGESTIONS_MODEL_ID = os.getenv("SUGGESTIONS_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+
+# Open Finance Backend
 OPEN_FINANCE_API_URL = os.getenv("OPEN_FINANCE_API_URL", "http://localhost:8003")
 OPEN_FINANCE_API_BASE = f"{OPEN_FINANCE_API_URL}/api/v1"

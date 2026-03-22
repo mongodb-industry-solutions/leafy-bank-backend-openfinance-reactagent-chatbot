@@ -1,11 +1,82 @@
 ---
 kind: pipeline
 type: kubernetes
+name: validate-pr
+
+trigger:
+  branch:
+    - staging
+    - main
+  event:
+    - pull_request
+
+steps:
+  - name: secret-scan
+    image: zricethezav/gitleaks:latest
+    commands:
+      - gitleaks detect --source . --no-git -v
+    when:
+      event:
+        - pull_request
+
+  - name: dependency-scan
+    image: aquasec/trivy:latest
+    commands:
+      - trivy fs --severity CRITICAL --exit-code 1 --no-progress backend/
+    when:
+      event:
+        - pull_request
+
+  - name: lint
+    image: python:3.10-slim
+    commands:
+      - pip install ruff
+      - ruff check backend/
+    when:
+      event:
+        - pull_request
+
+  - name: build-check
+    image: plugins/kaniko-ecr
+    settings:
+      no_push: true
+      registry: 795250896452.dkr.ecr.us-east-1.amazonaws.com
+      repo: industrysolutions/openfinance-chatbot
+      dockerfile: Dockerfile.backend
+    when:
+      event:
+        - pull_request
+
+  - name: helm-dry-run-staging
+    image: public.ecr.aws/kanopy/drone-helm:v3
+    settings:
+      dry_run: true
+      chart: mongodb/web-app
+      chart_version: 4.25.0
+      add_repos: [mongodb=https://10gen.github.io/helm-charts]
+      namespace: industrysolutions
+      release: openfinance-chatbot
+      values:
+        - "image.tag=test"
+        - "image.repository=test"
+      api_server: https://api.staging.corp.mongodb.com
+      kubernetes_token:
+        from_secret: stag_kub_pr_token
+      values_files: [ "environments/staging.yaml" ]
+    when:
+      event:
+        - pull_request
+
+---
+kind: pipeline
+type: kubernetes
 name: staging
 
 trigger:
   branch:
     - staging
+  event:
+    - push
 
 steps:
   - name: publish-backend
@@ -59,6 +130,8 @@ name: prod
 trigger:
   branch:
     - main
+  event:
+    - push
 
 steps:
   - name: publish-backend

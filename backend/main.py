@@ -16,6 +16,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from streaming import sse_event, process_stream_event
+from suggestions import generate_suggestions
 from config import LEAFY_BANK_MONGODB_URI
 from api_checkpointer import router as checkpointer_router
 from graph import get_checkpointer, build_graph, extract_response
@@ -123,6 +124,7 @@ class ChatResponse(BaseModel):
     thread_id: str
     response: str
     interrupt: Optional[dict] = None
+    suggestions: Optional[list[str]] = None
 
 
 @app.get("/")
@@ -159,13 +161,18 @@ async def chat(request: ChatRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data = await extract_response(agent, config)
+    response_text, interrupt_data, messages = await extract_response(agent, config)
+
+    suggestions = None
+    if response_text and not interrupt_data:
+        suggestions = await generate_suggestions(messages, response_text)
 
     return ChatResponse(
         thread_id=thread_id,
         # When interrupted, response_text is stale (from a prior turn) — clear it
         response="" if interrupt_data else response_text,
         interrupt=interrupt_data,
+        suggestions=suggestions,
     )
 
 
@@ -187,12 +194,17 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data = await extract_response(agent, config)
+    response_text, interrupt_data, messages = await extract_response(agent, config)
+
+    suggestions = None
+    if response_text and not interrupt_data:
+        suggestions = await generate_suggestions(messages, response_text)
 
     return ChatResponse(
         thread_id=request.thread_id,
         response="" if interrupt_data else response_text,
         interrupt=interrupt_data,
+        suggestions=suggestions,
     )
 
 
@@ -227,7 +239,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                     yield sse
 
             # Extract final response and interrupt after stream completes
-            response_text, interrupt_data = await extract_response(
+            response_text, interrupt_data, messages = await extract_response(
                 agent, config
             )
 
@@ -238,6 +250,10 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 yield sse_event("interrupt", interrupt_data)
             elif response_text:
                 yield sse_event("response", {"text": response_text})
+                # Generate contextual suggestions (non-blocking — response already sent)
+                suggestions = await generate_suggestions(messages, response_text)
+                if suggestions:
+                    yield sse_event("suggestions", {"items": suggestions})
 
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
@@ -285,7 +301,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 for sse in process_stream_event(event):
                     yield sse
 
-            response_text, interrupt_data = await extract_response(
+            response_text, interrupt_data, messages = await extract_response(
                 agent, config
             )
 
@@ -293,6 +309,9 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 yield sse_event("interrupt", interrupt_data)
             elif response_text:
                 yield sse_event("response", {"text": response_text})
+                suggestions = await generate_suggestions(messages, response_text)
+                if suggestions:
+                    yield sse_event("suggestions", {"items": suggestions})
 
         except Exception as e:
             logger.error(f"Stream resume error: {e}", exc_info=True)
