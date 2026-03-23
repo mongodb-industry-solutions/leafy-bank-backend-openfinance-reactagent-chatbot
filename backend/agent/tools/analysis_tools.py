@@ -447,7 +447,6 @@ async def fetch_internal_accounts(config: RunnableConfig) -> str:
 
 @tool
 async def calculate_financial_position(
-    user_object_id: str,
     consent_id: str,
     config: RunnableConfig,
     connected_external_accounts: Optional[list[str]] = None,
@@ -456,7 +455,6 @@ async def calculate_financial_position(
     """Calculate the user's total balance and total debt in a single call. Returns both aggregated balance (across all internal and external accounts) and aggregated debt (across all internal and external products). Used for DTI ratio in portability evaluation and financial overview.
 
     Args:
-        user_object_id: The user's MongoDB ObjectId (from find_user response _id field)
         consent_id: Any active consent ID for auth validation. The actual data scope is determined by connected_external_accounts and connected_external_products lists.
         connected_external_accounts: List of external account IDs to include (from banks_analyzed[].accounts across all banks)
         connected_external_products: List of external product IDs to include (from banks_analyzed[].products across all banks)
@@ -465,6 +463,14 @@ async def calculate_financial_position(
     try:
         token = await get_bearer_token(user_id)
         headers = {"Authorization": f"Bearer {token}"}
+
+        # Resolve ObjectId from username (not trusting LLM to pass it)
+        user_resp = await http_client.post(
+            "/leafybank/users/secure/find-user",
+            json={"user_identifier": user_id},
+        )
+        user_resp.raise_for_status()
+        user_object_id = user_resp.json()["user"]["_id"]
 
         balance_task = http_client.post(
             "/openfinance/secure/calculate-total-balance-for-user/",
