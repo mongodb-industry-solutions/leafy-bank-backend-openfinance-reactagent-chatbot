@@ -17,6 +17,33 @@ _AGENT_DISPLAY_NAMES = {
     "analysis_agent": "Analysis Agent",
 }
 
+# MongoDB feature used by each tool
+_TOOL_MONGODB_FEATURES = {
+    # Consent tools — Queryable Encryption
+    "create_consent": "Queryable Encryption",
+    "get_consent": "Queryable Encryption",
+    "list_user_consents": "Queryable Encryption",
+    "approve_consent": "Queryable Encryption",
+    "revoke_consent": "Queryable Encryption",
+    # Analysis tools
+    "analyze_spending": "Vector Search",
+    "calculate_financial_position": "Aggregation Pipeline",
+    "fetch_internal_accounts": "Aggregation Pipeline",
+    "find_matching_products": "Document Query",
+    "fetch_credit_score": "Document Query",
+    "get_underwriting_rules": "Document Query",
+    "fetch_customer_identification": "Queryable Encryption",
+    # Consent agent — simple queries
+    "list_institutions": "Document Query",
+    "verify_consent_data": "Consent-Gated Query",
+    # Portability agent
+    "find_user": "Document Query",
+    # MCP tools
+    "aggregate": "Aggregation Pipeline",
+    "find": "Document Query",
+    "count": "Document Query",
+}
+
 
 def sse_event(event_type: str, payload: dict) -> str:
     """Format a single SSE event line."""
@@ -159,12 +186,17 @@ def _handle_model_update(update: dict, agent_name: str) -> list[str]:
         # Check for tool calls
         if hasattr(msg, "tool_calls") and msg.tool_calls:
             for tc in msg.tool_calls:
-                results.append(sse_event("tool_call", {
+                tool_name = tc.get("name", "unknown")
+                payload = {
                     "agent": agent_name,
                     "agent_display": _AGENT_DISPLAY_NAMES.get(agent_name, agent_name),
-                    "tool": tc.get("name", "unknown"),
+                    "tool": tool_name,
                     "args": _summarize_args(tc.get("args", {})),
-                }))
+                }
+                mongodb_feature = _TOOL_MONGODB_FEATURES.get(tool_name)
+                if mongodb_feature:
+                    payload["mongodb_feature"] = mongodb_feature
+                results.append(sse_event("tool_call", payload))
 
     return results
 
