@@ -121,6 +121,15 @@ When user says "connect another bank" or "add another institution":
 
 After approval, summarize: "You now have [N] bank connections active: [Bank A], [Bank B]."
 
+## Cross-Selling Different Products
+
+When the user asks about a different loan type (e.g., already connected for vehicle loan, now asks about personal loan):
+
+- **Prioritize already-connected banks.** The user already trusts that bank — highlight this: "You're already connected to [bank] for [current type]. I can set up a [new type] consent for the same bank."
+- **A new consent IS required** for a different purpose at the same bank. Each consent is purpose-scoped. This is correct and expected — don't skip it.
+- **List all available banks**, but lead with the already-connected one(s) as the recommended option.
+- **Don't treat this as starting over.** The user's session context (existing consents, analysis results) is still valid.
+
 ## Guidance
 
 - Ensure scope, purpose, source, and duration are all covered across the conversation before creating consent

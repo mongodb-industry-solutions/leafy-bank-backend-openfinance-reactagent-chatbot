@@ -26,8 +26,9 @@ When evaluate_portability_offer returns a loan_type_warning (the bank's loan doe
 - Offer: analyze the available loan instead, or connect another bank to find the right loan type.
 
 When cross-selling or suggesting next steps:
-- Ask about OTHER loan types at the SAME bank: "Do you have other loans at [bank] you'd like to analyze?"
+- Suggest analyzing OTHER loan types at the SAME bank: "Would you like to analyze the [actual type] loan at [bank] instead?"
 - Or suggest connecting ANOTHER bank to find the requested loan type.
+- If the user wants a different product at an already-connected bank, explain that a new consent with a different purpose is needed — the process is streamlined since they're already set up with that bank.
 - Never ask "Do you have a [user's requested type] at a different bank?" — that's the type they already asked about.
 </loan_type_language>
 
