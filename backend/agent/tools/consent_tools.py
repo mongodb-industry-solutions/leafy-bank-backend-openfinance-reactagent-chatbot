@@ -188,13 +188,38 @@ async def list_user_consents(config: RunnableConfig) -> str:
 
 
 @tool
-async def request_bank_login(consent_id: str, institution_name: str) -> str:
+async def request_bank_login(
+    consent_id: str, institution_name: str, config: RunnableConfig
+) -> str:
     """Request the user to log in to their external bank. This will pause the conversation and redirect the user to the bank's login page.
 
     Args:
         consent_id: The consent ID that requires bank authentication
         institution_name: The name of the bank the user needs to log in to
     """
+    user_id = config["configurable"]["user_id"]
+    try:
+        response = await http_client.get(
+            "/openfinance/secure/institutions/",
+            params={"user_id": user_id},
+        )
+        response.raise_for_status()
+        data = response.json()
+        user_banks = [
+            inst.get("InstitutionName", "")
+            for inst in data.get("institutions", [])
+        ]
+        if institution_name not in user_banks:
+            return (
+                f"Login failed: {user_id} does not have an account at "
+                f"{institution_name}. Available banks with accounts: "
+                f"{', '.join(user_banks) if user_banks else 'none'}. "
+                f"Suggest the user connect to one of these banks instead."
+            )
+    except Exception as e:
+        logger.warning(f"Could not verify user accounts at {institution_name}: {e}")
+        # Proceed with login if the check fails — don't block on a validation error
+
     login_result = interrupt({
         "type": "BANK_LOGIN",
         "consent_id": consent_id,
