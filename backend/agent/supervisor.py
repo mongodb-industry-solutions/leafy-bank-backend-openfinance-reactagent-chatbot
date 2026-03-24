@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
@@ -238,19 +238,24 @@ async def supervisor_node(state: dict) -> dict:
     # When FINISH, add the supervisor's response as an AI message
     if decision.next == "FINISH" and decision.response:
         result["messages"] = [AIMessage(content=decision.response)]
-    # When routing to portability_agent with active consents, inject a handoff
-    # message so the portability agent has consent info clearly in recent history
+    # When routing to a sub-agent with active consents, inject a handoff
+    # message so the agent has consent info clearly in recent history.
+    # Uses HumanMessage — Claude 4.6 rejects conversations ending with an
+    # assistant message (prefill no longer supported). The handoff is context
+    # *for* the sub-agent, not a response *from* the assistant.
     elif decision.next == "portability_agent" and active_consents:
         consents_summary = json.dumps(
             [{"consent_id": c["consent_id"], "institution": c["institution"],
               "purpose": c["purpose"]} for c in active_consents]
         )
         handoff = (
-            f"Routing to portability agent. "
+            f"[Supervisor handoff] Routing to portability agent. "
             f"Active consents: {consents_summary}"
         )
+        msgs = []
         if decision.response:
-            handoff = f"{decision.response}\n\n[{handoff}]"
-        result["messages"] = [AIMessage(content=handoff)]
+            msgs.append(AIMessage(content=decision.response))
+        msgs.append(HumanMessage(content=handoff))
+        result["messages"] = msgs
 
     return result
