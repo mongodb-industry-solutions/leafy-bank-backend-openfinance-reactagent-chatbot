@@ -1,7 +1,6 @@
 """Portability agent — evaluates financial data for loan portability and financial advice."""
 
 import logging
-from pathlib import Path
 
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
@@ -19,9 +18,6 @@ from agent.tools.analysis_tools import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_PATH = Path(__file__).parent / "prompts" / "portability.md"
-SYSTEM_PROMPT = PROMPT_PATH.read_text()
-
 TOOLS = [
     find_user,
     analyze_spending,
@@ -33,8 +29,12 @@ TOOLS = [
 ]
 
 
-def create_portability_agent():
-    """Build and return the portability agent graph (no checkpointer)."""
+def create_portability_agent(system_prompt: str):
+    """Build and return the portability agent graph (no checkpointer).
+
+    Args:
+        system_prompt: The agent's system prompt, loaded from encrypted MongoDB.
+    """
     llm = ChatBedrockConverse(
         model=CHAT_COMPLETIONS_MODEL_ID,
         region_name=AWS_REGION,
@@ -44,7 +44,7 @@ def create_portability_agent():
     agent = create_agent(
         model=llm,
         tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         name="portability_agent",
     )
 

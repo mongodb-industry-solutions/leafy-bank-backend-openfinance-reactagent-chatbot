@@ -176,3 +176,7 @@ API_REFERENCE.md
 CLAUDE.md
 security_check.sh
 .ruff_cache/
+
+# Queryable Encryption
+backend/master-key.bin
+backend/encryption_config.json

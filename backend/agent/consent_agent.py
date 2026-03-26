@@ -1,7 +1,6 @@
 """Consent agent — guides users through Open Finance consent creation and management."""
 
 import logging
-from pathlib import Path
 
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
@@ -21,10 +20,6 @@ from agent.tools.consent_tools import (
 
 logger = logging.getLogger(__name__)
 
-# Load system prompt from markdown file
-PROMPT_PATH = Path(__file__).parent / "prompts" / "consent.md"
-SYSTEM_PROMPT = PROMPT_PATH.read_text()
-
 # All consent tools
 TOOLS = [
     list_institutions,
@@ -39,8 +34,12 @@ TOOLS = [
 ]
 
 
-def create_consent_agent():
-    """Build and return the consent agent graph (no checkpointer)."""
+def create_consent_agent(system_prompt: str):
+    """Build and return the consent agent graph (no checkpointer).
+
+    Args:
+        system_prompt: The agent's system prompt, loaded from encrypted MongoDB.
+    """
     llm = ChatBedrockConverse(
         model=CHAT_COMPLETIONS_MODEL_ID,
         region_name=AWS_REGION,
@@ -50,7 +49,7 @@ def create_consent_agent():
     agent = create_agent(
         model=llm,
         tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         name="consent_agent",
     )
 

@@ -19,7 +19,9 @@ from streaming import sse_event, process_stream_event
 from suggestions import generate_suggestions
 from config import LEAFY_BANK_MONGODB_URI
 from api_checkpointer import router as checkpointer_router
-from graph import get_checkpointer, build_graph, extract_response
+from api_admin import router as admin_router
+from routers.encryption_demo import router as encryption_demo_router
+from graph import get_checkpointer, build_graph, extract_response, profile_service
 from http_client import http_client
 
 logging.basicConfig(
@@ -80,6 +82,8 @@ async def lifespan(app: FastAPI):
         checkpointer = get_checkpointer()
         app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
         app.state.mcp_client = mcp_client
+        app.state.mcp_tools = mcp_tools
+        app.state.profile_service = profile_service
         logger.info("Multi-agent graph initialized")
 
         yield
@@ -104,6 +108,8 @@ app.add_middleware(
 )
 
 app.include_router(checkpointer_router)
+app.include_router(admin_router, prefix="/admin", tags=["Admin"])
+app.include_router(encryption_demo_router, prefix="/api/v1/encryption-demo", tags=["Encryption Demo"])
 
 
 class ChatRequest(BaseModel):

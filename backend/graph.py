@@ -13,15 +13,21 @@ from config import (
 )
 from state import AgentState
 from agent.db.mdb import MongoDBConnector
+from agent.db.encrypted_connector import get_encrypted_connector
+from agent.db.agent_profiles import AgentProfileService
 from agent.consent_agent import create_consent_agent
 from agent.portability_agent import create_portability_agent
 from agent.internal_data_agent import create_internal_data_agent
-from agent.supervisor import supervisor_node
+from agent.supervisor import create_supervisor_node
 
 logger = logging.getLogger(__name__)
 
-# Shared MongoDB connector — single client for the app
+# Shared MongoDB connector — plain client for checkpointer and other collections
 db = MongoDBConnector()
+
+# Encrypted connector — agent profiles only (QE on system_prompt, tool_config, agent_name)
+encrypted_db = get_encrypted_connector()
+profile_service = AgentProfileService(encrypted_db)
 
 
 def get_checkpointer() -> MongoDBSaver:
@@ -42,19 +48,30 @@ def _route_from_supervisor(state: dict) -> str:
 def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     """Build and compile the multi-agent graph.
 
+    Loads agent prompts from encrypted MongoDB (QE), then creates agents
+    with those prompts. On first startup, seeds from .md files.
+
     Args:
         checkpointer: MongoDB checkpointer for conversation persistence.
         mcp_tools: LangChain tools from the MongoDB Atlas MCP server for the
             internal data agent.
     """
-    consent_agent = create_consent_agent()
-    portability_agent = create_portability_agent()
-    internal_data_agent = create_internal_data_agent(mcp_tools or [])
+    # Seed from files on first startup (idempotent — no-op if collection has data)
+    profile_service.seed_from_files()
+
+    # Load active prompts from encrypted collection
+    prompts = profile_service.get_active_prompts()
+    logger.info("Agent prompts loaded from encrypted MongoDB")
+
+    consent_agent = create_consent_agent(prompts["consent_agent"])
+    portability_agent = create_portability_agent(prompts["portability_agent"])
+    internal_data_agent = create_internal_data_agent(prompts["internal_data_agent"], mcp_tools or [])
+    supervisor = create_supervisor_node(prompts["supervisor"])
 
     workflow = StateGraph(AgentState)
 
     # Nodes
-    workflow.add_node("supervisor", supervisor_node)
+    workflow.add_node("supervisor", supervisor)
     workflow.add_node("consent_agent", consent_agent)
     workflow.add_node("portability_agent", portability_agent)
     workflow.add_node("internal_data_agent", internal_data_agent)

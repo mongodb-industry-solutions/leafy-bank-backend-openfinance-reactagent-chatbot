@@ -296,7 +296,6 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44"},
     {file = "cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49"},
@@ -2192,7 +2191,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\""
+markers = "implementation_name != \"PyPy\""
 files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
@@ -2496,7 +2495,10 @@ files = [
 ]
 
 [package.dependencies]
+certifi = {version = "*", optional = true, markers = "(os_name == \"nt\" or sys_platform == \"darwin\") and extra == \"encryption\""}
 dnspython = ">=1.16.0,<3.0.0"
+pymongo-auth-aws = {version = ">=1.1.0,<2.0.0", optional = true, markers = "extra == \"encryption\""}
+pymongocrypt = {version = ">=1.13.0,<2.0.0", optional = true, markers = "extra == \"encryption\""}
 
 [package.extras]
 aws = ["pymongo-auth-aws (>=1.1.0,<2.0.0)"]
@@ -2507,6 +2509,49 @@ ocsp = ["certifi ; os_name == \"nt\" or sys_platform == \"darwin\"", "cryptograp
 snappy = ["python-snappy"]
 test = ["pytest (>=8.2)", "pytest-asyncio (>=0.24.0)"]
 zstd = ["zstandard"]
+
+[[package]]
+name = "pymongo-auth-aws"
+version = "1.3.0"
+description = "MONGODB-AWS authentication support for PyMongo"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "pymongo_auth_aws-1.3.0-py3-none-any.whl", hash = "sha256:367f6d853da428a02e9e450422756133715d40f8141f47ae5d98f139a88c0ce5"},
+    {file = "pymongo_auth_aws-1.3.0.tar.gz", hash = "sha256:d0fa893958dc525ca29f601c34f2ca73c860f66bc6511ec0a7da6eb7ea44e94f"},
+]
+
+[package.dependencies]
+boto3 = "*"
+botocore = "*"
+
+[package.extras]
+test = ["dnspython (>=2.6.1)", "pymongo", "pytest"]
+
+[[package]]
+name = "pymongocrypt"
+version = "1.17.0"
+description = "Python bindings for libmongocrypt"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pymongocrypt-1.17.0-py3-none-macosx_11_0_universal2.whl", hash = "sha256:6d6110623ca286c829eaea4ccb660a12e28f15afe771199657add0bbfae336d3"},
+    {file = "pymongocrypt-1.17.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f330fc28db2e2ea7d2bcdaec86dbe2413c8716703c6ff15e48a9907eeaec4a89"},
+    {file = "pymongocrypt-1.17.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9e06349fd9fff6f6a2b334a7510da3cdfa698cfaea68e3c23c2a5de46c33c06a"},
+    {file = "pymongocrypt-1.17.0-py3-none-win_amd64.whl", hash = "sha256:b1282ce2ee029abecdb11d5be41a12728bd83370059d0c7e76e2e1a652cbc1ec"},
+    {file = "pymongocrypt-1.17.0.tar.gz", hash = "sha256:f2cc38f8e29c41355631eba3257efda01914e56cac1dde1c3a6ec14ac93a95df"},
+]
+
+[package.dependencies]
+cffi = ">=1.12.0,<3"
+cryptography = ">=40"
+httpx = ">=0.25.0"
+packaging = ">=21.0"
+
+[package.extras]
+test = ["cffi (>=1.12.0,<3)", "cryptography (>=2)", "pymongo[aws] (>=4)", "pytest (>=7.0)", "respx", "setuptools", "unasync"]
 
 [[package]]
 name = "python-dateutil"
@@ -3701,4 +3746,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "80cc9b6d87a11c0ddd4ab4eacc4f8d80f277d3b6779034ecce7613a8002321fb"
+content-hash = "733f7cb1925cab456106af2603862aa1f04eff78ce040a973e72809cd04b136e"
