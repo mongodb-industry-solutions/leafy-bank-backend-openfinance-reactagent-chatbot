@@ -765,6 +765,7 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
         bank_count = len(consent_ids)
         writer({"type": "progress", "step": "fetch",
                 "message": f"Fetching transactions from Leafy Bank and {bank_count} external bank(s)...",
+                "mongodb_feature": "ISO 20022",
                 "input": json.dumps({"GET": [
                     f"/leafybank/transactions/spending/{user_id}",
                     *[f"/openfinance/customers/{user_id}/external-data?consent_id={cid}"
@@ -859,17 +860,22 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
                 "consent_status": bank.get("consent_status"),
             }
 
+        # Include a sample raw ISO 20022 transaction for demo visibility
+        fetch_output = {
+            f"/leafybank/transactions/spending/{user_id}": {
+                "transactions": f"[{len(internal_transactions)} items]",
+            },
+            "external_banks": banks_summary,
+            "errors": errors,
+            "/leafybank/spending/best-practices": {
+                "categories": f"[{len(best_practices_list)} items]",
+            },
+        }
+        if all_external_transactions:
+            fetch_output["iso20022_sample_transaction"] = all_external_transactions[0]
+
         writer({"type": "progress", "step": "fetch",
-                "output": json.dumps({
-                    f"/leafybank/transactions/spending/{user_id}": {
-                        "transactions": f"[{len(internal_transactions)} items]",
-                    },
-                    "external_banks": banks_summary,
-                    "errors": errors,
-                    "/leafybank/spending/best-practices": {
-                        "categories": f"[{len(best_practices_list)} items]",
-                    },
-                })})
+                "output": json.dumps(fetch_output)})
 
         total_ext_txn_count = len(all_external_transactions)
         logger.info(
@@ -923,6 +929,7 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
             classify_body = {"transactions": uncategorized}
             writer({"type": "progress", "step": "classify",
                     "message": f"Classifying {len(uncategorized)} untagged transactions...",
+                    "mongodb_feature": "Vector Search",
                     "input": json.dumps({
                         "POST": "/leafybank/mcc/classify",
                         "body": classify_body,

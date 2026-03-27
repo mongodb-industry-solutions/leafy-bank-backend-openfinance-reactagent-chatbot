@@ -26,7 +26,6 @@ _TOOL_MONGODB_FEATURES = {
     "approve_consent": "Queryable Encryption",
     "revoke_consent": "Queryable Encryption",
     # Analysis tools
-    "analyze_spending": "Vector Search",
     "calculate_financial_position": "Aggregation Pipeline",
     "fetch_internal_accounts": "Aggregation Pipeline",
     "find_matching_products": "Document Query",
@@ -119,7 +118,7 @@ def _handle_custom_event(namespace: tuple, data) -> list[str]:
         "message": data.get("message", ""),
     }
     # Pass through optional fields for input/output display
-    for key in ("step", "input", "output"):
+    for key in ("step", "input", "output", "mongodb_feature"):
         if key in data:
             payload[key] = data[key]
 
