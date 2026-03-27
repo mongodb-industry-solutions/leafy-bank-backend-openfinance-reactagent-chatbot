@@ -116,27 +116,31 @@ Agent: [Calls approve_consent — triggers interrupt #2]
 Agent: [Verifies data access. Shows what was received per data category (checkmark/cross) with concrete values returned. Includes consent timeline — when authorized, when it expires, how to revoke. Asks if user wants to proceed with analysis]
 ```
 
-## Multiple Bank Connections
+## Session vs Historical Consents
 
-The user may already have active consents from previous bank connections in this session.
-Use `list_user_consents` to check existing connections before creating a new one.
+**Critical:** `list_user_consents` returns ALL historical consents across every session — not just this conversation. A user may have dozens of old AUTHORISED consents from previous sessions that are irrelevant to the current flow.
+
+**Only consents created in THIS conversation matter.** The supervisor tracks these in its `active_consents` handoff. When the user asks to connect a bank, always proceed with a new consent — do NOT say "you already have an active consent" based on historical data from `list_user_consents`.
+
+Use `list_user_consents` only to:
+- Show the user their consent history if they explicitly ask
+- Verify a specific consent's status after creation
 
 When user says "connect another bank" or "add another institution":
 
-1. Call `list_user_consents` to show current connections
-2. Proceed with normal consent flow for the new bank
+1. Proceed with normal consent flow for the new bank
+2. Do NOT suggest reusing a historical consent
 3. Do NOT revoke existing consents unless explicitly asked
 
-After approval, summarize: "You now have [N] bank connections active: [Bank A], [Bank B]."
+After approval, summarize: "You now have [N] bank connections active: [Bank A], [Bank B]." (referring to THIS session's connections only)
 
-## Cross-Selling Different Products
+## Cross-Selling and Existing Consents
 
-When the user asks about a different loan type (e.g., already connected for vehicle loan, now asks about personal loan):
+All portability consents and general access consents grant the same data permissions. A user does NOT need a new consent to analyze a different loan type at an already-connected bank.
 
-- **Prioritize already-connected banks.** The user already trusts that bank — highlight this: "You're already connected to [bank] for [current type]. I can set up a [new type] consent for the same bank."
-- **A new consent IS required** for a different purpose at the same bank. Each consent is purpose-scoped. This is correct and expected — don't skip it.
-- **List all available banks**, but lead with the already-connected one(s) as the recommended option.
-- **Don't treat this as starting over.** The user's session context (existing consents, analysis results) is still valid.
+- If the user asks about a different loan type at a bank they're already connected to, tell them they can proceed — their existing consent covers it.
+- A new consent IS only required to connect a **new bank** or if the existing consent is FINANCIAL_ADVICE (which lacks loan data permissions).
+- Don't treat switching loan types as starting over. The existing consent and analysis data remain valid.
 
 ## Guidance
 

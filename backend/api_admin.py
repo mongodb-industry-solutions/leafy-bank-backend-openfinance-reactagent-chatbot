@@ -111,13 +111,15 @@ async def delete_profile(agent_name: str, profile_name: str):
 
 @router.post("/reload")
 async def reload_graph(fastapi_request: Request):
-    """Rebuild the agent graph with current active profiles.
+    """Sync prompts from .md files into encrypted MongoDB, then rebuild the agent graph.
 
-    Reads fresh prompts from encrypted MongoDB and recreates all agents.
+    1. Reads all prompt .md files and updates the active profiles in the DB.
+    2. Rebuilds the agent graph from the freshly updated encrypted MongoDB.
     In-flight requests finish on the old graph; new requests use the new one.
     """
+    sync_results = profile_service.sync_from_files()
     checkpointer = get_checkpointer()
     mcp_tools = getattr(fastapi_request.app.state, "mcp_tools", None)
     fastapi_request.app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
     logger.info("Agent graph reloaded with fresh profiles from encrypted MongoDB")
-    return {"status": "reloaded"}
+    return {"status": "reloaded", "synced_profiles": sync_results}

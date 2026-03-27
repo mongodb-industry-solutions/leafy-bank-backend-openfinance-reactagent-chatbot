@@ -176,7 +176,7 @@ async def evaluate_portability_offer(
     current_rate: float,
     loan_amount: float,
     loan_sub_type: str,
-    consent_purpose: str,
+    consent_purpose: Optional[str] = None,
     remaining_term_months: Optional[int] = None,
     credit_score: Optional[int] = None,
 ) -> str:
@@ -192,7 +192,7 @@ async def evaluate_portability_offer(
         current_rate: Current loan interest rate (%) from external_data products
         loan_amount: Outstanding loan balance from external_data products
         loan_sub_type: Loan sub-type from external_data (Personal, PayrollDeductible, Vehicle)
-        consent_purpose: The consent purpose (PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY)
+        consent_purpose: The consent purpose (PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY). Optional — omit for general access consents; the tool infers the purpose from loan_sub_type.
         remaining_term_months: Remaining loan term in months from external_data products. When provided, monthly payment and savings calculations are included.
         credit_score: Credit bureau score from fetch_credit_score (only needed for Personal loans > $1500)
     """
@@ -203,18 +203,18 @@ async def evaluate_portability_offer(
 
     try:
         # --- Validate consent purpose vs loan sub-type ---
-        expected_type = _PURPOSE_TO_LOAN_TYPE.get(consent_purpose)
+        # All portability purposes and general access grant ALL_PERMISSIONS, so any
+        # of them can be used for any loan type. Only FINANCIAL_ADVICE is restricted
+        # (no LOANS_READ). Purpose-to-loan-type mismatch is informational, not blocking.
         loan_type_mismatch = None
-        if expected_type and loan_sub_type and loan_sub_type != expected_type:
+        if consent_purpose and "FINANCIAL_ADVICE" in consent_purpose.upper():
             loan_type_mismatch = {
                 "consent_purpose": consent_purpose,
-                "expected_loan_type": expected_type,
                 "actual_loan_type": loan_sub_type,
                 "message": (
-                    f"This bank's loan is {loan_sub_type}, but the consent purpose "
-                    f"{consent_purpose} expects {expected_type}. The spending data is "
-                    f"still valid for scoring. Look in the banks_analyzed response "
-                    f"from analyze_spending for another bank's {expected_type} loan."
+                    f"The consent purpose is FINANCIAL_ADVICE, which does not include "
+                    f"loan data permissions. A portability consent or general access "
+                    f"consent is needed for loan portability analysis."
                 ),
             }
 

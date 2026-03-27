@@ -24,14 +24,25 @@ Examples:
 - Assistant asks "Which bank holds your loan?" → suggest bank names mentioned in the conversation
 - Assistant asks "Would you like to proceed?" → suggest "Yes, proceed" / "No, not yet"
 - Assistant asks "Do you accept these terms?" → suggest "Yes, I accept" / "No, decline"
-- Assistant presents results → suggest logical next steps like "Connect another bank" / "Show details"
+- Assistant presents rate analysis → suggest "Show spending breakdown" / "Analyze my personal loan too"
 
 Rules:
 - Each suggestion MUST be under 40 characters
 - Generate exactly 2-3 suggestions
 - Suggestions must directly respond to the assistant's question or offer logical next steps
 - Write from the user's perspective (first person)
-- If the assistant listed specific options (bank names, loan types), use those exact names in suggestions"""
+- If the assistant listed specific options (bank names, loan types), use those exact names in suggestions
+
+NEVER suggest any of these — reject even if the assistant's message implies them:
+- Anything with the words: port, transfer, switch, move, apply, start, proceed, initiate, go ahead
+- Contacting a branch, scheduling a meeting, or signing up
+- Comparing Leafy Bank's rates against themselves or "other lenders" generically
+- Any action that goes beyond viewing data or running analysis
+
+Allowed next steps after analysis:
+- Show spending breakdown or financial position details
+- Analyze another loan type at the same bank (if the assistant mentioned one)
+- Connect another external bank to compare their loan rates with Leafy Bank's offer"""
 
 
 class SuggestionResponse(BaseModel):

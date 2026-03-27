@@ -157,7 +157,13 @@ async def get_consent(consent_id: str, config: RunnableConfig) -> str:
 
 @tool
 async def list_user_consents(config: RunnableConfig) -> str:
-    """List all consents for the current user."""
+    """List active (AUTHORISED) consents for the current user.
+
+    Returns only AUTHORISED consents — expired, consumed, and pending consents
+    are excluded. These are historical consents across all sessions, not just
+    the current conversation. Use the supervisor's active_consents handoff to
+    determine which consents belong to THIS session.
+    """
     user_id = config["configurable"]["user_id"]
     try:
         token = await get_bearer_token(user_id)
@@ -169,11 +175,12 @@ async def list_user_consents(config: RunnableConfig) -> str:
         response.raise_for_status()
         data = response.json()
         consents = data.get("consents", [])
-        if not consents:
-            return "No consents found for this user."
 
+        # Only return AUTHORISED consents — EXPIRED/CONSUMED/AWAITING are noise
         results = []
         for c in consents:
+            if (c.get("Status") or "").upper() != "AUTHORISED":
+                continue
             results.append({
                 "consent_id": c.get("ConsentId"),
                 "status": c.get("Status"),
@@ -181,6 +188,9 @@ async def list_user_consents(config: RunnableConfig) -> str:
                 "source": c.get("SourceInstitution", {}).get("InstitutionName"),
                 "type": c.get("ConsentType"),
             })
+
+        if not results:
+            return "No active consents found for this user."
         return json.dumps(results)
     except Exception as e:
         logger.error(f"Error listing consents: {e}")
@@ -384,7 +394,8 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
                 "details": [
                     {
                         "type": p.get("ProductType", "unknown"),
-                        "sub_type": p.get("ProductSubType"),
+                        "sub_type": p.get("LoanSubType") or p.get("ProductSubType"),
+                        "name": p.get("ProductName"),
                         "outstanding_balance": p.get("ProductOutstandingBalance")
                         or p.get("OutstandingAmount"),
                         "interest_rate": p.get("ProductInterestRate")

@@ -120,6 +120,44 @@ class AgentProfileService:
 
         logger.info(f"Seeded {len(PROMPT_FILES)} agent profiles")
 
+    def sync_from_files(self) -> dict[str, str]:
+        """Update all active profiles' system_prompt from the .md files on disk.
+
+        Uses update_one by _id (bypasses QE equality query limitations on find).
+        Returns {agent_name: status} summary.
+        """
+        results = {}
+        for agent_name, filename in PROMPT_FILES.items():
+            prompt_path = PROMPTS_DIR / filename
+            if not prompt_path.exists():
+                results[agent_name] = "file_not_found"
+                continue
+
+            new_prompt = prompt_path.read_text()
+            active = self.collection.find_one(
+                {"agent_name": agent_name, "is_active": True}
+            )
+            if not active:
+                results[agent_name] = "no_active_profile"
+                continue
+
+            current_version = active.get("version", 0)
+            result = self.collection.update_one(
+                {"_id": active["_id"], "version": current_version},
+                {"$set": {
+                    "system_prompt": new_prompt,
+                    "version": current_version + 1,
+                    "updated_at": datetime.now(UTC),
+                }},
+            )
+            if result.modified_count:
+                results[agent_name] = f"updated ({len(new_prompt)} chars)"
+            else:
+                results[agent_name] = "unchanged"
+
+        logger.info(f"Synced agent profiles from files: {results}")
+        return results
+
     def get_active_prompts(self) -> dict[str, str]:
         """Return {agent_name: system_prompt} for all active profiles.
 
