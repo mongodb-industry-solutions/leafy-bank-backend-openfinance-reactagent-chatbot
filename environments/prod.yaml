@@ -6,7 +6,7 @@ env:
   NODE_ENV: production
   APP_NAME: openfinance-chatbot
   AWS_REGION: us-east-1
-  CHAT_COMPLETIONS_MODEL_ID: us.anthropic.claude-sonnet-4-20250514-v1:0
+  CHAT_COMPLETIONS_MODEL_ID: us.anthropic.claude-sonnet-4-6
   CHECKPOINTS_AIO_COLLECTION: checkpoints_aio
   CHECKPOINTS_WRITES_AIO_COLLECTION: checkpoint_writes_aio
   # Internal K8s service URL for the Open Finance backend (prod release)
