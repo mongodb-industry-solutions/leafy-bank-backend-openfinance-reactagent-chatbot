@@ -1,7 +1,6 @@
 # task-def.json
 **/task-def.json
 plan/
-.claude/
 .augment/
 .githooks/
 setup-hooks.sh
@@ -173,7 +172,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 API_REFERENCE.md
-CLAUDE.md
 security_check.sh
 .ruff_cache/
 
