@@ -1,6 +1,34 @@
+# ---- Stage 0: Node.js base (for MCP server) ----
 FROM node:20-slim AS node-base
 
+# ---- Stage 1: Build ----
+FROM python:3.11-slim-bookworm AS builder
+
+WORKDIR /app
+
+# Install curl (needed for crypt_shared download)
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download MongoDB crypt_shared library (Linux x86_64, Debian 12)
+# Must match your Atlas server major version (8.0.x for MongoDB 8.x)
+# Available versions: https://www.mongodb.com/try/download/enterprise-advanced/releases/archive
+ARG CRYPT_SHARED_VERSION=8.0.4
+RUN mkdir -p /opt/mongo_crypt \
+    && curl -fSL "https://downloads.mongodb.com/linux/mongo_crypt_shared_v1-linux-x86_64-enterprise-debian12-${CRYPT_SHARED_VERSION}.tgz" \
+    | tar -xzf - -C /opt/mongo_crypt \
+    && test -f /opt/mongo_crypt/lib/mongo_crypt_v1.so
+
+# Install Poetry and dependencies (before copying app code for layer caching)
+COPY /backend/pyproject.toml /backend/poetry.lock ./
+RUN pip install --no-cache-dir poetry==1.8.4 \
+    && poetry config virtualenvs.in-project true \
+    && poetry install --no-interaction --no-cache --no-root
+
+# ---- Stage 2: Runtime ----
 FROM python:3.11-slim-bookworm
+
+WORKDIR /app
 
 # Copy Node.js runtime from official image (required for npx mongodb-mcp-server)
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
@@ -9,23 +37,16 @@ COPY --from=node-base /usr/local/include/node /usr/local/include/node
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-ENV GET_POETRY_IGNORE_DEPRECATION=1
+# Copy crypt_shared library and venv from builder
+COPY --from=builder /opt/mongo_crypt/lib/mongo_crypt_v1.so /opt/mongo_crypt/lib/mongo_crypt_v1.so
+COPY --from=builder /app/.venv /app/.venv
 
-WORKDIR /app
-
-# Poetry dependencies
-COPY /backend/pyproject.toml /backend/poetry.lock ./
-
-# Poetry installation
-RUN pip install poetry==1.8.4
-
-# Poetry config & install dependencies
-RUN poetry config virtualenvs.in-project true
-RUN poetry lock --no-update
-RUN poetry install --no-interaction -v --no-cache --no-root
-
+# Copy application code
 COPY ./backend/ .
+
+ENV CRYPT_SHARED_LIB_PATH=/opt/mongo_crypt/lib/mongo_crypt_v1.so
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8080
 
-CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
