@@ -8,14 +8,14 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
+from config import AWS_REGION, SUPERVISOR_MODEL_ID
 from state import ConsentInfo
 
 logger = logging.getLogger(__name__)
 
 # Single LLM instance reused across all supervisor calls
 _supervisor_llm = ChatBedrockConverse(
-    model=CHAT_COMPLETIONS_MODEL_ID,
+    model=SUPERVISOR_MODEL_ID,
     region_name=AWS_REGION,
     temperature=0,
 )

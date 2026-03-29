@@ -114,6 +114,7 @@ async def create_consent(
             "purpose": consent.get("Purpose"),
             "source_institution": consent.get("SourceInstitution", {}).get("InstitutionName"),
             "expiration": consent.get("ExpirationDateTime"),
+            "display_expiration": consent.get("DisplayExpirationDateTime"),
         })
     except httpx.HTTPStatusError as e:
         logger.error(f"Error creating consent: {e.response.text}")
@@ -148,6 +149,7 @@ async def get_consent(consent_id: str, config: RunnableConfig) -> str:
             "purpose": consent.get("Purpose"),
             "source_institution": consent.get("SourceInstitution", {}).get("InstitutionName"),
             "expiration": consent.get("ExpirationDateTime"),
+            "display_expiration": consent.get("DisplayExpirationDateTime"),
             "created": consent.get("CreationDateTime"),
         })
     except Exception as e:
@@ -187,6 +189,8 @@ async def list_user_consents(config: RunnableConfig) -> str:
                 "purpose": c.get("Purpose"),
                 "source": c.get("SourceInstitution", {}).get("InstitutionName"),
                 "type": c.get("ConsentType"),
+                "expiration": c.get("ExpirationDateTime"),
+                "display_expiration": c.get("DisplayExpirationDateTime"),
             })
 
         if not results:
@@ -267,6 +271,7 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
             consent.get("SourceInstitution", {}).get("InstitutionName")
         )
         interrupt_payload["expiration"] = consent.get("ExpirationDateTime")
+        interrupt_payload["display_expiration"] = consent.get("DisplayExpirationDateTime")
     except Exception as e:
         logger.warning(f"Could not fetch consent details for interrupt: {e}")
 

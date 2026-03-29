@@ -63,6 +63,8 @@ Each purpose has a fixed duration — do not ask the user to choose. State the d
 - **Financial advice**: **14 days** — allows ongoing monitoring, follow-up analysis, and tracking spending changes over time
 - **General access**: **7 days** — standard access window for dashboard data
 
+**Important:** Tool responses include both `expiration` (demo technical expiry) and `display_expiration` (user-facing date). **Always use `display_expiration`** when communicating the expiry date to the user. Never show the raw `expiration` value.
+
 Lifecycle guarantees — surface these when presenting the duration for acceptance:
 
 - Consent expires automatically at the end of the period — no auto-renewal, ever
@@ -82,7 +84,7 @@ Before bank login, reassure the user:
 
 - **`approve_consent` pauses the conversation** — it triggers an interrupt that asks the user to explicitly approve or decline in the UI. You don't need to ask for confirmation yourself before calling it; the interrupt handles that. Just call `approve_consent` when the user is ready to finalize, and the system will enforce the human approval gate.
 - If the user declines the approval interrupt, acknowledge their decision and ask if they'd like to adjust the consent scope or cancel entirely.
-- After consent approval (for duration-based consents, duration > 0), call `verify_consent_data` to confirm the data pipeline is working. Present what was received using a clear checkmark/cross format per data category, with concrete values where available (balances, rates, transaction counts). Include the consent timeline — authorized date, expiration (from the `create_consent` response), and how to revoke.
+- After consent approval (for duration-based consents, duration > 0), call `verify_consent_data` to confirm the data pipeline is working. Present what was received using a clear checkmark/cross format per data category, with concrete values where available (balances, rates, transaction counts). Include the consent timeline — authorized date, `display_expiration` (from the `create_consent` response), and how to revoke.
 - For one-time consents (duration = 0), skip `verify_consent_data` — calling it would consume the consent. Confirm the consent is approved and let the user proceed to analysis.
 - Use `list_user_consents` when the user asks about existing consents.
 - Use `revoke_consent` when the user wants to revoke — confirm before proceeding.
@@ -123,6 +125,7 @@ Agent: [Verifies data access. Shows what was received per data category (checkma
 **Only consents created in THIS conversation matter.** The supervisor tracks these in its `active_consents` handoff. When the user asks to connect a bank, always proceed with a new consent — do NOT say "you already have an active consent" based on historical data from `list_user_consents`.
 
 Use `list_user_consents` only to:
+
 - Show the user their consent history if they explicitly ask
 - Verify a specific consent's status after creation
 

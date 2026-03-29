@@ -17,6 +17,9 @@ CHECKPOINTS_WRITES_AIO_COLLECTION = os.getenv("CHECKPOINTS_WRITES_AIO_COLLECTION
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 CHAT_COMPLETIONS_MODEL_ID = os.getenv("CHAT_COMPLETIONS_MODEL_ID")
 
+# Supervisor (routing only — lighter model sufficient)
+SUPERVISOR_MODEL_ID = os.getenv("SUPERVISOR_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+
 # Suggestions
 SUGGESTIONS_MODEL_ID = os.getenv("SUGGESTIONS_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
