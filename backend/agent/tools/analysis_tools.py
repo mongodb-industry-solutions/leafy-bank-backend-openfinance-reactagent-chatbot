@@ -333,13 +333,14 @@ async def evaluate_portability_offer(
         offers = []
         for product in matching_products:
             base_rate = product.get("ProductInterestRate", 0)
-            qualified_rate = round(base_rate * best_multiplier, 2)
+            qualified_rate = round(current_rate * best_multiplier, 2)
             rate_vs_current = round(current_rate - qualified_rate, 2)
 
             offer = {
                 "product_id": product.get("ProductId"),
                 "product_name": product.get("ProductName"),
                 "base_rate": base_rate,
+                "current_rate": current_rate,
                 "qualified_rate": qualified_rate,
                 "rate_improvement_vs_current": rate_vs_current,
                 "loan_range": (
@@ -385,7 +386,7 @@ async def evaluate_portability_offer(
             parts.append(
                 f" Top Leafy Bank offer: {best['product_name']} at "
                 f"{best['qualified_rate']}% "
-                f"(base {best['base_rate']}% × {best_multiplier})."
+                f"(your current {current_rate}% × {best_multiplier} multiplier)."
             )
             if "total_savings_over_term" in best and remaining_term_months:
                 parts.append(
