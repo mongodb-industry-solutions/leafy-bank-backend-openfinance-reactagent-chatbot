@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Human-readable agent names
 _AGENT_DISPLAY_NAMES = {
     "consent_agent": "Consent Agent",
-    "analysis_agent": "Analysis Agent",
+    "portability_agent": "Portability Agent",
 }
 
 # MongoDB feature used by each tool
@@ -152,7 +152,7 @@ def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]
         # Inside a sub-agent: tool execution completed
         results.extend(_handle_tools_update(update, agent_name))
 
-    elif node_name in ("consent_agent", "analysis_agent"):
+    elif node_name in ("consent_agent", "portability_agent"):
         # Parent-level: sub-agent finished
         results.append(sse_event("agent_complete", {
             "agent": node_name,

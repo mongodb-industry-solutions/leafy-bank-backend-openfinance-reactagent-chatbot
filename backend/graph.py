@@ -98,8 +98,8 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     return graph
 
 
-async def extract_response(agent, config: dict) -> tuple[str, Optional[dict], list]:
-    """Extract the agent's last AI message, any pending interrupt, and full message history."""
+async def extract_response(agent, config: dict) -> tuple[str, Optional[dict], list, dict]:
+    """Extract the agent's last AI message, any pending interrupt, full message history, and state values."""
     state = await agent.aget_state(config)
 
     # Check for pending interrupts
@@ -118,4 +118,4 @@ async def extract_response(agent, config: dict) -> tuple[str, Optional[dict], li
             response_text = msg.content
             break
 
-    return response_text, interrupt_data, messages
+    return response_text, interrupt_data, messages, state.values

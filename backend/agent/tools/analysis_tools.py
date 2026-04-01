@@ -199,7 +199,7 @@ async def evaluate_portability_offer(
     try:
         writer = get_stream_writer()
     except Exception:
-        writer = lambda _: None
+        def writer(_): pass
 
     try:
         # --- Validate consent purpose vs loan sub-type ---
@@ -212,9 +212,9 @@ async def evaluate_portability_offer(
                 "consent_purpose": consent_purpose,
                 "actual_loan_type": loan_sub_type,
                 "message": (
-                    f"The consent purpose is FINANCIAL_ADVICE, which does not include "
-                    f"loan data permissions. A portability consent or general access "
-                    f"consent is needed for loan portability analysis."
+                    "The consent purpose is FINANCIAL_ADVICE, which does not include "
+                    "loan data permissions. A portability consent or general access "
+                    "consent is needed for loan portability analysis."
                 ),
             }
 
@@ -333,13 +333,14 @@ async def evaluate_portability_offer(
         offers = []
         for product in matching_products:
             base_rate = product.get("ProductInterestRate", 0)
-            qualified_rate = round(base_rate * best_multiplier, 2)
+            qualified_rate = round(current_rate * best_multiplier, 2)
             rate_vs_current = round(current_rate - qualified_rate, 2)
 
             offer = {
                 "product_id": product.get("ProductId"),
                 "product_name": product.get("ProductName"),
                 "base_rate": base_rate,
+                "current_rate": current_rate,
                 "qualified_rate": qualified_rate,
                 "rate_improvement_vs_current": rate_vs_current,
                 "loan_range": (
@@ -385,7 +386,7 @@ async def evaluate_portability_offer(
             parts.append(
                 f" Top Leafy Bank offer: {best['product_name']} at "
                 f"{best['qualified_rate']}% "
-                f"(base {best['base_rate']}% × {best_multiplier})."
+                f"(your current {current_rate}% × {best_multiplier} multiplier)."
             )
             if "total_savings_over_term" in best and remaining_term_months:
                 parts.append(
@@ -757,7 +758,7 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
     try:
         writer = get_stream_writer()
     except Exception:
-        writer = lambda _: None
+        def writer(_): pass
 
     try:
         # --- Step 1: Fetch all data sources concurrently ---

@@ -31,6 +31,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _derive_flow_context(state_values: dict, response_text: str, messages: list) -> str:
+    """Derive the suggestion flow context from graph state, response text, and message history."""
+    lower = response_text.lower()
+
+    # Portability acceptance confirmation was just sent
+    if "portability request has been submitted" in lower:
+        return "portability_accepted"
+
+    # Portability offer was just presented (contains actual rate/savings numbers)
+    # These phrases only appear in the offer itself, not in "Would you like to analyze..."
+    offer_phrases = ["qualified rate", "total savings over", "monthly savings",
+                     "rate improvement", "would you like to accept this"]
+    if any(phrase in lower for phrase in offer_phrases):
+        return "portability_offer_presented"
+
+    # Check if an offer was presented EARLIER in the conversation — if so,
+    # follow-up Q&A should still show Accept/Decline chips, not "Analyze"
+    for msg in reversed(messages):
+        if hasattr(msg, "type") and msg.type == "ai" and isinstance(msg.content, str):
+            msg_lower = msg.content.lower()
+            # Stop scanning if we hit the acceptance confirmation (past that point)
+            if "portability request has been submitted" in msg_lower:
+                break
+            if any(phrase in msg_lower for phrase in offer_phrases):
+                return "portability_offer_presented"
+
+    active_consents = state_values.get("active_consents", [])
+
+    # No active consents — likely in consent flow
+    if not active_consents:
+        return "consent_flow"
+
+    # Distinguish portability vs financial advice by consent purpose
+    purposes = [c.get("purpose", "") for c in active_consents]
+    if any("PORTABILITY" in (p or "").upper() for p in purposes):
+        return "portability_analysis"
+    if any((p or "").upper() == "FINANCIAL_ADVICE" for p in purposes):
+        return "financial_advice"
+
+    return "general"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage resources: MCP server, checkpointer, and agent graph."""
@@ -167,11 +209,12 @@ async def chat(request: ChatRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data, messages = await extract_response(agent, config)
+    response_text, interrupt_data, messages, state_values = await extract_response(agent, config)
 
     suggestions = None
     if response_text and not interrupt_data:
-        suggestions = await generate_suggestions(messages, response_text)
+        flow_context = _derive_flow_context(state_values, response_text, messages)
+        suggestions = await generate_suggestions(messages, response_text, flow_context)
 
     return ChatResponse(
         thread_id=thread_id,
@@ -200,11 +243,12 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
         config,
     )
 
-    response_text, interrupt_data, messages = await extract_response(agent, config)
+    response_text, interrupt_data, messages, state_values = await extract_response(agent, config)
 
     suggestions = None
     if response_text and not interrupt_data:
-        suggestions = await generate_suggestions(messages, response_text)
+        flow_context = _derive_flow_context(state_values, response_text, messages)
+        suggestions = await generate_suggestions(messages, response_text, flow_context)
 
     return ChatResponse(
         thread_id=request.thread_id,
@@ -245,7 +289,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                     yield sse
 
             # Extract final response and interrupt after stream completes
-            response_text, interrupt_data, messages = await extract_response(
+            response_text, interrupt_data, messages, state_values = await extract_response(
                 agent, config
             )
 
@@ -257,7 +301,8 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
             elif response_text:
                 yield sse_event("response", {"text": response_text})
                 # Generate contextual suggestions (non-blocking — response already sent)
-                suggestions = await generate_suggestions(messages, response_text)
+                flow_context = _derive_flow_context(state_values, response_text, messages)
+                suggestions = await generate_suggestions(messages, response_text, flow_context)
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
 
@@ -307,7 +352,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 for sse in process_stream_event(event):
                     yield sse
 
-            response_text, interrupt_data, messages = await extract_response(
+            response_text, interrupt_data, messages, state_values = await extract_response(
                 agent, config
             )
 
@@ -315,7 +360,8 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 yield sse_event("interrupt", interrupt_data)
             elif response_text:
                 yield sse_event("response", {"text": response_text})
-                suggestions = await generate_suggestions(messages, response_text)
+                flow_context = _derive_flow_context(state_values, response_text, messages)
+                suggestions = await generate_suggestions(messages, response_text, flow_context)
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
 
