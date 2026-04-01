@@ -36,9 +36,9 @@ async def main():
         if user_input.lower() == "resume":
             resume_data = {"login_status": "success"}
             print(f"  [Resuming with: {resume_data}]")
-            result = await agent.ainvoke(Command(resume=resume_data), config)
+            await agent.ainvoke(Command(resume=resume_data), config)
         else:
-            result = await agent.ainvoke(
+            await agent.ainvoke(
                 {"messages": [HumanMessage(content=user_input)]},
                 config,
             )

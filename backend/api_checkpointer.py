@@ -3,7 +3,6 @@ import logging
 
 from graph import db
 from config import (
-    DATABASE_NAME,
     CHECKPOINTS_AIO_COLLECTION,
     CHECKPOINTS_WRITES_AIO_COLLECTION,
 )

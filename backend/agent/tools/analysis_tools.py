@@ -199,7 +199,7 @@ async def evaluate_portability_offer(
     try:
         writer = get_stream_writer()
     except Exception:
-        writer = lambda _: None
+        def writer(_): pass
 
     try:
         # --- Validate consent purpose vs loan sub-type ---
@@ -212,9 +212,9 @@ async def evaluate_portability_offer(
                 "consent_purpose": consent_purpose,
                 "actual_loan_type": loan_sub_type,
                 "message": (
-                    f"The consent purpose is FINANCIAL_ADVICE, which does not include "
-                    f"loan data permissions. A portability consent or general access "
-                    f"consent is needed for loan portability analysis."
+                    "The consent purpose is FINANCIAL_ADVICE, which does not include "
+                    "loan data permissions. A portability consent or general access "
+                    "consent is needed for loan portability analysis."
                 ),
             }
 
@@ -758,7 +758,7 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
     try:
         writer = get_stream_writer()
     except Exception:
-        writer = lambda _: None
+        def writer(_): pass
 
     try:
         # --- Step 1: Fetch all data sources concurrently ---

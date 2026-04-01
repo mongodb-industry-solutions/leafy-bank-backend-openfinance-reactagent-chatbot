@@ -9,7 +9,6 @@ database breach, an attacker can't read or tamper with the instructions
 governing thousands of agent interactions."
 """
 
-import json
 import logging
 
 from fastapi import APIRouter, HTTPException
