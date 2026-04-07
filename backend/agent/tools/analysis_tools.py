@@ -589,10 +589,13 @@ def _build_mcc_to_category(best_practices: list[dict]) -> dict[str, dict]:
     return mcc_map
 
 
-def _categorize_internal_transactions(
+def _categorize_transactions(
     transactions: list[dict], mcc_map: dict[str, dict]
 ) -> tuple[dict[str, float], float, list[dict]]:
-    """Categorize Leafy Bank transactions by MCC and internal transfers.
+    """Categorize transactions in ISO 20022 format by MCC code.
+
+    Works for both internal (Leafy Bank) and external bank transactions
+    since both now use the same ISO 20022–aligned document structure.
 
     Returns (category_totals, total_spending, uncategorized_list).
     """
@@ -601,11 +604,10 @@ def _categorize_internal_transactions(
     total_spending = 0.0
 
     for txn in transactions:
-        credit_debit = txn.get("TransactionCreditDebitType", "")
-        details = txn.get("TransactionDetails", {})
-        txn_type = details.get("TransactionType", "")
-        is_internal = details.get("TransactionInternal", False)
-        amount = txn.get("TransactionAmount", 0)
+        amount = txn.get("Amt", {}).get("value", 0)
+        direction = txn.get("CdtDbtInd", "")
+        txn_type = txn.get("TxTp", "")
+        is_internal = txn.get("IntrnlTxn", False)
 
         # Internal transfers to savings
         if txn_type == "AccountTransfer" and is_internal:
@@ -613,76 +615,24 @@ def _categorize_internal_transactions(
             total_spending += amount
             continue
 
-        # Skip CREDIT (income) and non-DEBIT
-        if credit_debit != "DEBIT":
+        # Skip CREDIT (income)
+        if direction != "DBIT":
             continue
 
         total_spending += amount
 
         # Categorize by MCC
-        merchant = txn.get("TransactionMerchant", {})
-        mcc = merchant.get("MCC", "")
+        mcc = txn.get("BkTxCd", {}).get("Prtry", {}).get("Cd", "")
         if mcc and mcc in mcc_map:
             cat_id = mcc_map[mcc]["CategoryId"]
             category_totals[cat_id] = category_totals.get(cat_id, 0) + amount
         else:
             uncategorized.append({
-                "description": txn.get("TransactionDescription", ""),
+                "description": txn.get("AddtlNtryInf", ""),
                 "amount": amount,
-                "merchant": merchant.get("MerchantName", ""),
+                "merchant": txn.get("Cdtr", {}).get("Nm", ""),
                 "mcc": mcc,
-            })
-
-    return category_totals, total_spending, uncategorized
-
-
-def _normalize_external_transaction(txn: dict) -> dict:
-    """Normalize an ISO 20022-aligned external transaction to a flat working format."""
-    return {
-        "amount": txn.get("Amt", {}).get("value", 0),
-        "currency": txn.get("Amt", {}).get("Ccy", "USD"),
-        "direction": txn.get("CdtDbtInd", ""),
-        "description": txn.get("AddtlNtryInf", ""),
-        "merchant_name": txn.get("Cdtr", {}).get("Nm", ""),
-        "mcc": txn.get("BkTxCd", {}).get("Prtry", {}).get("Cd", ""),
-        "bank": txn.get("Acct", {}).get("Svcr", ""),
-        "date": txn.get("BookgDt"),
-        "purpose": txn.get("Purp", {}).get("Cd", ""),
-    }
-
-
-def _categorize_external_transactions(
-    transactions: list[dict], mcc_map: dict[str, dict]
-) -> tuple[dict[str, float], float, list[dict]]:
-    """Categorize external bank transactions (ISO 20022 format) by MCC.
-
-    Returns (category_totals, total_spending, uncategorized_list).
-    """
-    category_totals: dict[str, float] = {}
-    uncategorized = []
-    total_spending = 0.0
-
-    for txn in transactions:
-        norm = _normalize_external_transaction(txn)
-
-        # Skip CREDIT (income)
-        if norm["direction"] != "DBIT":
-            continue
-
-        amount = norm["amount"]
-        total_spending += amount
-
-        mcc = norm["mcc"]
-        if mcc and mcc in mcc_map:
-            cat_id = mcc_map[mcc]["CategoryId"]
-            category_totals[cat_id] = category_totals.get(cat_id, 0) + amount
-        else:
-            uncategorized.append({
-                "description": norm["description"],
-                "amount": amount,
-                "merchant": norm["merchant_name"],
-                "mcc": mcc,
-                "bank": norm["bank"],
+                "bank": txn.get("Acct", {}).get("Svcr", ""),
             })
 
     return category_totals, total_spending, uncategorized
@@ -898,19 +848,10 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
                     "mcc_codes_in_lookup": len(mcc_map),
                 })})
 
-        int_totals, int_spending, int_uncat = _categorize_internal_transactions(
-            internal_transactions, mcc_map
+        all_transactions = internal_transactions + all_external_transactions
+        merged_totals, total_spending, uncategorized = _categorize_transactions(
+            all_transactions, mcc_map
         )
-        ext_totals, ext_spending, ext_uncat = _categorize_external_transactions(
-            all_external_transactions, mcc_map
-        )
-
-        merged_totals: dict[str, float] = {}
-        for cat_id in set(list(int_totals.keys()) + list(ext_totals.keys())):
-            merged_totals[cat_id] = int_totals.get(cat_id, 0) + ext_totals.get(cat_id, 0)
-
-        total_spending = int_spending + ext_spending
-        uncategorized = int_uncat + ext_uncat
 
         writer({"type": "progress", "step": "categorize",
                 "output": json.dumps({
