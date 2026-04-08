@@ -419,13 +419,13 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
             debit_count = 0
             credit_count = 0
             for t in transactions:
-                txn_date = t.get("BookgDt") or t.get("TransactionDate")
+                txn_date = t.get("BookgDt")
                 if txn_date:
                     dates.append(str(txn_date))
-                txn_type = t.get("CdtDbtInd") or t.get("TransactionType", "")
-                if txn_type in ("DBIT", "DEBIT"):
+                cdt_dbt = t.get("CdtDbtInd", "")
+                if cdt_dbt == "DBIT":
                     debit_count += 1
-                elif txn_type in ("CRDT", "CREDIT"):
+                elif cdt_dbt == "CRDT":
                     credit_count += 1
             dates.sort()
             txn_info = {
