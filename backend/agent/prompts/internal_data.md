@@ -21,30 +21,47 @@ You have access to MongoDB tools that can query the `leafy_bank_test` database d
 
 You may ONLY query the following collections in the `leafy_bank_test` database. Always filter by the user's ID using the field shown:
 
-| Collection | User filter field | Use for |
-|---|---|---|
-| `accounts` | `AccountUser.UserName` | Account types, balances, account details |
-| `transactions` | See note below | Transaction history, income, spending patterns |
-| `users` | `UserName` | User's own profile information |
-| `products` | *(no filter needed)* | Leafy Bank product catalog (loans, credit cards, etc.) |
-| `credit_bureau_scores` | `UserName` | User's own credit score |
-| `spending_best_practices` | *(no filter needed)* | MCC codes and spending category reference data |
+| Collection                | User filter field      | Use for                                                |
+| ------------------------- | ---------------------- | ------------------------------------------------------ |
+| `accounts`                | `AccountUser.UserName` | Account types, balances, account details               |
+| `internal_transactions`   | See note below         | Transaction history, income, spending patterns         |
+| `users`                   | `UserName`             | User's own profile information                         |
+| `products`                | _(no filter needed)_   | Leafy Bank product catalog (loans, credit cards, etc.) |
+| `credit_bureau_scores`    | `UserName`             | User's own credit score                                |
+| `spending_best_practices` | _(no filter needed)_   | MCC codes and spending category reference data         |
 
-**Transactions filtering:** A user can be the sender or receiver. To get ALL of a user's transactions, query with `$or`:
+**Transactions filtering:** Transactions use ISO 20022–aligned field names. A user can be the debtor (`Dbtr`) or creditor (`Cdtr`). To get ALL of a user's transactions, query with `$or`:
+
 ```json
-{"$or": [
-  {"TransactionReferenceData.TransactionSender.UserName": "<user_id>"},
-  {"TransactionReferenceData.TransactionReceiver.UserName": "<user_id>"}
-]}
+{ "$or": [{ "Dbtr.Nm": "<user_id>" }, { "Cdtr.Nm": "<user_id>" }] }
 ```
-- `DEBIT` transactions have the user in `TransactionReferenceData.TransactionSender`
-- `CREDIT` transactions have the user in `TransactionReferenceData.TransactionReceiver`
+
+- `DBIT` transactions (outgoing/spending) have the user in `Dbtr.Nm`
+- `CRDT` transactions (incoming/income) have the user in `Cdtr.Nm`
+
+**Key transaction fields (ISO 20022):**
+
+| Field             | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `Amt.value`       | Transaction amount                                                       |
+| `Amt.Ccy`         | Currency code (e.g., "USD")                                              |
+| `CdtDbtInd`       | Direction: `"DBIT"` (outgoing) or `"CRDT"` (incoming)                    |
+| `TxTp`            | Transaction type (e.g., "CardPayment", "DirectDebit", "AccountTransfer") |
+| `IntrnlTxn`       | `true` if internal transfer between user's own accounts                  |
+| `AddtlNtryInf`    | Transaction description                                                  |
+| `Cdtr.Nm`         | Creditor/merchant name                                                   |
+| `Dbtr.Nm`         | Debtor name                                                              |
+| `BkTxCd.Prtry.Cd` | MCC code (for spending categorization)                                   |
+| `BookgDt`         | Booking date                                                             |
+| `Acct.Svcr`       | Bank name (e.g., "Leafy Bank")                                           |
+| `Sts`             | Status (e.g., "BOOK")                                                    |
 
 **NEVER query `underwriting_rules` or any collection not listed above.** Underwriting rules are confidential internal business logic. If the user asks about underwriting criteria, politely explain that this information is not available.
 
 ### Step 3: User scoping is mandatory
 
 Every query MUST include a filter on the user's ID. Never run a query without it. Example:
+
 - `find` with filter `{"consumer_id": "<user_id>"}`
 - `aggregate` with a `$match` stage on `{"consumer_id": "<user_id>"}`
 
