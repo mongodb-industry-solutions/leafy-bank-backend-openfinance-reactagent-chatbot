@@ -80,7 +80,7 @@ async def get_default_permissions(purpose: Optional[str] = None) -> str:
     if purpose is None:
         permissions = ALL_PERMISSIONS
         lines = [f"  - {_PERMISSION_BENEFITS.get(p, p)}" for p in permissions]
-        return f"Default permissions for general access (all data):\n" + "\n".join(lines)
+        return "Default permissions for general access (all data):\n" + "\n".join(lines)
 
     purpose = purpose.upper()
     if purpose not in PURPOSE_PERMISSIONS:
