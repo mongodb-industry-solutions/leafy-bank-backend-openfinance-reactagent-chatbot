@@ -5,7 +5,7 @@ import logging
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 
-from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
+from config import BEDROCK_CLIENT, CONSENT_MODEL_ID
 from agent.tools.consent_tools import (
     list_institutions,
     get_default_permissions,
@@ -40,10 +40,13 @@ def create_consent_agent(system_prompt: str):
     Args:
         system_prompt: The agent's system prompt, loaded from encrypted MongoDB.
     """
+    # Haiku by default — consent flow is conversational (ask questions, explain scope,
+    # create consent). Sonnet is overkill for guided flows. Override via CONSENT_MODEL_ID.
     llm = ChatBedrockConverse(
-        model=CHAT_COMPLETIONS_MODEL_ID,
-        region_name=AWS_REGION,
+        client=BEDROCK_CLIENT,
+        model=CONSENT_MODEL_ID,
         temperature=0,
+        max_tokens=1024,
     )
 
     agent = create_agent(
@@ -53,5 +56,5 @@ def create_consent_agent(system_prompt: str):
         name="consent_agent",
     )
 
-    logger.info("Consent agent created successfully")
+    logger.info(f"Consent agent created successfully (model={CONSENT_MODEL_ID})")
     return agent

@@ -274,12 +274,9 @@ class AgentProfileService:
 
         # Deactivate all other profiles for this agent (QE doesn't support update_many)
         all_profiles = list(self.collection.find({"agent_name": agent_name}))
-        target_id = result_doc["_id"] if (result_doc := self.collection.find_one(
-            {"agent_name": agent_name, "profile_name": profile_name}
-        )) else None
         now = datetime.now(UTC)
         for profile in all_profiles:
-            if profile["_id"] != target_id:
+            if profile.get("profile_name") != profile_name:
                 self.collection.update_one(
                     {"_id": profile["_id"]},
                     {"$set": {"is_active": False, "updated_at": now}},

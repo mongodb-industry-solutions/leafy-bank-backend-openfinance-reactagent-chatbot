@@ -44,7 +44,7 @@ async def main():
             )
 
         # Extract response and check for interrupts
-        response_text, interrupt_data = await extract_response(agent, config)
+        response_text, interrupt_data, _, _ = await extract_response(agent, config)
 
         if interrupt_data:
             print(f"\n  [INTERRUPT: {interrupt_data}]")

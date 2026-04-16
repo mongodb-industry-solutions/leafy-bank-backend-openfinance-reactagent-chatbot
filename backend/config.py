@@ -1,4 +1,7 @@
 import os
+
+import boto3
+from botocore.config import Config as BotoConfig
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,8 +20,24 @@ CHECKPOINTS_WRITES_AIO_COLLECTION = os.getenv("CHECKPOINTS_WRITES_AIO_COLLECTION
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 CHAT_COMPLETIONS_MODEL_ID = os.getenv("CHAT_COMPLETIONS_MODEL_ID")
 
+# Shared Bedrock client — adaptive retry with exponential backoff + jitter prevents
+# 503 "Too many connections" (ServiceUnavailableException) under concurrent load.
+# https://docs.aws.amazon.com/bedrock/latest/userguide/troubleshooting-api-error-codes.html
+_bedrock_boto_config = BotoConfig(
+    retries={"max_attempts": 8, "mode": "adaptive"},
+    read_timeout=120,
+)
+BEDROCK_CLIENT = boto3.client(
+    "bedrock-runtime",
+    region_name=AWS_REGION,
+    config=_bedrock_boto_config,
+)
+
 # Supervisor (routing only — lighter model sufficient)
 SUPERVISOR_MODEL_ID = os.getenv("SUPERVISOR_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+
+# Consent agent (guided conversational flow — Haiku is sufficient, Sonnet is overkill)
+CONSENT_MODEL_ID = os.getenv("CONSENT_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
 # Suggestions
 SUGGESTIONS_MODEL_ID = os.getenv("SUGGESTIONS_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")

@@ -118,7 +118,11 @@ async def create_consent(
         })
     except httpx.HTTPStatusError as e:
         logger.error(f"Error creating consent: {e.response.text}")
-        return f"Error creating consent: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error creating consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error creating consent: {e}")
         return f"Error creating consent: {str(e)}"
@@ -299,11 +303,16 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
             "consent_id": consent.get("ConsentId"),
             "status": consent.get("Status"),
             "purpose": consent.get("Purpose"),
+            "source_institution": consent.get("SourceInstitution", {}).get("InstitutionName"),
             "message": "Consent approved successfully.",
         })
     except httpx.HTTPStatusError as e:
         logger.error(f"Error approving consent: {e.response.text}")
-        return f"Error approving consent: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error approving consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error approving consent: {e}")
         return f"Error approving consent: {str(e)}"
@@ -333,7 +342,11 @@ async def revoke_consent(consent_id: str, config: RunnableConfig) -> str:
         })
     except httpx.HTTPStatusError as e:
         logger.error(f"Error revoking consent: {e.response.text}")
-        return f"Error revoking consent: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error revoking consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error revoking consent: {e}")
         return f"Error revoking consent: {str(e)}"
@@ -475,7 +488,11 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Error verifying consent data: {e.response.text}")
-        return f"Error verifying consent data: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error verifying consent data (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error verifying consent data: {e}")
         return f"Error verifying consent data: {str(e)}"
