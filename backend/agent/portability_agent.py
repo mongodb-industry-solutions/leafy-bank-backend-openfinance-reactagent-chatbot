@@ -5,7 +5,7 @@ import logging
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 
-from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
+from config import BEDROCK_CLIENT, CHAT_COMPLETIONS_MODEL_ID
 from agent.tools.analysis_tools import (
     fetch_credit_score,
     evaluate_portability_offer,
@@ -36,9 +36,10 @@ def create_portability_agent(system_prompt: str):
         system_prompt: The agent's system prompt, loaded from encrypted MongoDB.
     """
     llm = ChatBedrockConverse(
+        client=BEDROCK_CLIENT,
         model=CHAT_COMPLETIONS_MODEL_ID,
-        region_name=AWS_REGION,
         temperature=0,
+        max_tokens=2048,
     )
 
     agent = create_agent(
