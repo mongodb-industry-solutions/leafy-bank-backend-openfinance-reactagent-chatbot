@@ -34,6 +34,23 @@ PURPOSE_PERMISSIONS = {
     ],
 }
 
+# User-facing benefit descriptions per permission — the agent presents these
+# directly from tool output instead of recalling from prompt memory.
+_PERMISSION_BENEFITS = {
+    "LOANS_READ": "Loan details — current rate, outstanding balance, remaining term. Feeds the portability calculation to guarantee exact savings before you commit.",
+    "ACCOUNTS_READ": "Account info — account ownership and banking relationship. Confirms eligibility and strengthens the application.",
+    "ACCOUNTS_BALANCES_READ": "Balances — current balances across accounts. Feeds debt-to-income ratio, may unlock better rate tiers.",
+    "REPAYMENT_HISTORY_READ": "Repayment history — payment track record over recent months. Demonstrates reliability, helps qualify for premium rates.",
+    "CUSTOMER_IDENTIFICATION_READ": "Identity verification — one-time regulatory check required by the Central Bank. Never stored after verification.",
+    "TRANSACTIONS_READ": "Transaction history — income deposits and spending patterns. Builds credit profile — typically reduces rates by 0.5-2.5% (est. R$1,200-3,600/year depending on loan size).",
+}
+
+_FINANCIAL_ADVICE_BENEFITS = {
+    "ACCOUNTS_READ": "Account info — complete overview, helps spot optimization opportunities.",
+    "ACCOUNTS_BALANCES_READ": "Balances — full financial picture across all banks.",
+    "TRANSACTIONS_READ": "Transaction history — identifies where you're overspending vs doing well.",
+}
+
 
 @tool
 async def list_institutions() -> str:
@@ -53,23 +70,27 @@ async def list_institutions() -> str:
 
 @tool
 async def get_default_permissions(purpose: Optional[str] = None) -> str:
-    """Get the default data permissions that will be requested for a given consent purpose.
+    """Get the default data permissions and their user-facing benefit descriptions for a given consent purpose.
+    ALWAYS call this before explaining scope to the user. Present ALL listed permissions — do not omit any.
+    The returned descriptions are written for the user — present them directly.
 
     Args:
         purpose: The consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit or pass null for general access (all permissions).
     """
     if purpose is None:
         permissions = ALL_PERMISSIONS
-        formatted = "\n".join(f"  - {p}" for p in permissions)
-        return f"Default permissions for general access (no specific purpose):\n{formatted}"
+        lines = [f"  - {_PERMISSION_BENEFITS.get(p, p)}" for p in permissions]
+        return "Default permissions for general access (all data):\n" + "\n".join(lines)
 
     purpose = purpose.upper()
     if purpose not in PURPOSE_PERMISSIONS:
         return f"Unknown purpose '{purpose}'. Valid purposes: {', '.join(PURPOSE_PERMISSIONS.keys())} (or omit for general access)"
 
     permissions = PURPOSE_PERMISSIONS[purpose]
-    formatted = "\n".join(f"  - {p}" for p in permissions)
-    return f"Default permissions for {purpose}:\n{formatted}"
+    is_advice = purpose == "FINANCIAL_ADVICE"
+    benefit_map = _FINANCIAL_ADVICE_BENEFITS if is_advice else _PERMISSION_BENEFITS
+    lines = [f"  - {benefit_map.get(p, _PERMISSION_BENEFITS.get(p, p))}" for p in permissions]
+    return f"Default permissions for {purpose}:\n" + "\n".join(lines)
 
 
 @tool
