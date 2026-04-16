@@ -2,17 +2,26 @@
 
 Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational Open Finance consent management, loan portability analysis, and personalized financial advice — all through a multi-agent chatbot powered by LangGraph.
 
+> **This is one of three interconnected repositories that make up the Leafy Bank Open Finance solution:**
+>
+> | Repository | Description | Port |
+> |------------|-------------|------|
+> | [open-finance-next-gen](https://github.com/mongodb-industry-solutions/open-finance-next-gen) | FastAPI backend — consents, accounts, transactions, Queryable Encryption | 8003 |
+> | **leafy-bank-backend-openfinance-reactagent-chatbot** (this repo) | LangGraph multi-agent chatbot — consent flows, portability analysis, financial advice | 8080 |
+> | [open-finance-next-gen-ui](https://github.com/mongodb-industry-solutions/open-finance-next-gen-ui) | Next.js 15 frontend — dashboard, multi-bank views, AI assistant | 3000 |
+
 ## Where MongoDB Shines
 
 - **Conversation Persistence**: MongoDB's document model stores full LangGraph checkpoint state — messages, tool call history, interrupt payloads, and active consents — as a single document per conversation turn. Resume any conversation exactly where it left off, across sessions.
 - **Atlas Vector Search for Transaction Classification**: The Portability Agent uses Atlas Vector Search to semantically classify spending transactions (e.g., "Uber ride" maps to `TRANSPORTATION`), built into Atlas without a separate vector database.
 - **MCP Server for Ad-Hoc Queries**: The Internal Data Agent connects to MongoDB via the official MCP server, enabling natural language queries against Leafy Bank's internal data — accounts, transactions, products, credit scores — without custom tool code for each collection.
+- **Queryable Encryption for Consent Privacy**: The Consent Agent creates and queries consents stored with Queryable Encryption in the Open Finance backend. Sensitive fields (consumer identity, permissions, source institution) are encrypted at rest — the Atlas server never sees plaintext, and equality queries on encrypted fields enable consent lookups without decryption server-side.
+- **Queryable Encryption for Agent Profiles**: Agent system prompts and tool configurations are stored in MongoDB with Queryable Encryption — the `agent_name` field supports equality queries on ciphertext, while `system_prompt` and `tool_config` are encrypted at rest. Even with full database access, an attacker cannot read or tamper with the instructions governing agent behavior.
 - **Flexible Document Model**: Consent records, external bank data, and underwriting rules all have different shapes. MongoDB stores them naturally without schema conflicts, and the agent reads whatever structure each API returns.
 
 ## High-Level Architecture
 
-<!-- TODO: Add architecture diagram -->
-![Architecture Diagram](placeholder-architecture-diagram.png)
+![Architecture Diagram](architecture-diagram.png)
 
 ## Multi-Agent Workflow
 
@@ -56,7 +65,8 @@ The chatbot uses LangGraph's `interrupt()` to pause the workflow at two critical
 - **[MongoDB MCP Server](https://github.com/mongodb-labs/mongodb-mcp-server)** for natural language queries against internal collections
 - **[LangGraph](https://langchain-ai.github.io/langgraph/)** for multi-agent orchestration with supervisor pattern
 - **[LangChain](https://python.langchain.com/)** for agent tooling and abstractions
-- **[AWS Bedrock](https://aws.amazon.com/bedrock/)** (Anthropic Claude Sonnet) for LLM inference
+- **[MongoDB Queryable Encryption](https://www.mongodb.com/docs/manual/core/queryable-encryption/)** for encrypted agent profile storage
+- **[AWS Bedrock](https://aws.amazon.com/bedrock/)** — Claude Sonnet 4.6 for agents, Claude Haiku 4.5 for supervisor routing and suggestion generation
 - **[Voyage AI](https://www.voyageai.com/)** for embedding generation used by Atlas Vector Search
 - **[FastAPI](https://fastapi.tiangolo.com/)** (Python) for the REST API backend
 - **[Poetry](https://python-poetry.org/)** for Python dependency management
@@ -119,6 +129,32 @@ The chatbot depends on the Open Finance backend API for consent management, inst
 
 > Without this service running, consent and portability tools will fail with connection errors.
 
+### Set Up Queryable Encryption
+
+Agent profiles are stored with MongoDB Queryable Encryption. The setup requires a master key and an encrypted collection with Data Encryption Keys (DEKs).
+
+1. Generate a 96-byte local master key:
+
+   ```bash
+   python -c "import os; open('backend/master-key.bin', 'wb').write(os.urandom(96))"
+   ```
+
+2. Run the encrypted agent profiles setup script:
+
+   ```bash
+   cd backend && poetry run python ../scripts/setup_encrypted_profiles.py
+   ```
+
+   This creates the `encrypted_agent_profiles` collection, generates DEKs, and saves `encryption_config.json` (gitignored).
+
+3. Agent prompts are seeded from `.md` files on first startup. To force a re-sync from files:
+
+   ```bash
+   curl -X POST http://localhost:8080/admin/reload
+   ```
+
+> For production, replace the local master key with AWS KMS by setting `KMS_PROVIDER=aws` and `AWS_KMS_KEY_ARN` in your `.env`. Never commit `master-key.bin` or `encryption_config.json` to version control.
+
 ### Populate Seed Data
 
 The Leafy Bank internal data agent requires seed data in your Atlas cluster. Import the following collections into a database called `leafy_bank_test`:
@@ -164,7 +200,7 @@ The Leafy Bank internal data agent requires seed data in your Atlas cluster. Imp
 
    # AWS Bedrock
    AWS_REGION=us-east-1
-   CHAT_COMPLETIONS_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
+   CHAT_COMPLETIONS_MODEL_ID=us.anthropic.claude-sonnet-4-6
 
    # Checkpointer Collections
    CHECKPOINTS_AIO_COLLECTION=checkpoints_aio
@@ -178,6 +214,11 @@ The Leafy Bank internal data agent requires seed data in your Atlas cluster. Imp
 
    # Vector Embeddings (transaction classification)
    VOYAGE_API_KEY=
+
+   # Queryable Encryption (agent profiles)
+   KMS_PROVIDER=local
+   LOCAL_MASTER_KEY_PATH=backend/master-key.bin
+   ENCRYPTION_CONFIG_PATH=backend/encryption_config.json
    ```
 
 ### Running Locally
@@ -243,6 +284,7 @@ make clean    # Remove container and images
 | `POST` | `/chat/stream` | Send message, stream agent steps via SSE |
 | `POST` | `/chat/stream/resume` | Stream after resume |
 | `POST` | `/checkpointer/clear-all-memory` | Clear all conversation threads |
+| `GET` | `/api/v1/encryption-demo/compare/{agent_name}` | QE encrypted vs decrypted agent profile comparison |
 
 ### Request Format
 
@@ -292,6 +334,7 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 | `progress` | Sub-step progress updates |
 | `agent_complete` | Agent finished its turn |
 | `response` | Final agent response text |
+| `suggestions` | Contextual reply suggestions (e.g., "Accept offer", bank names) |
 | `interrupt` | Workflow paused for human input |
 | `error` | Error details |
 | `done` | Stream complete |
