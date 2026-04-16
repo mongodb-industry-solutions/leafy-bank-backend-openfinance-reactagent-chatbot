@@ -841,6 +841,9 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
                         merged_totals[cat_id] = merged_totals.get(cat_id, 0) + amount
                         newly_classified += 1
                     else:
+                        # Still uncategorized after vector search — add to "other"
+                        # so the amount is accounted for in the score calculation
+                        merged_totals["other"] = merged_totals.get("other", 0) + amount
                         still_uncat += 1
 
                 classification_summary["newly_classified"] = newly_classified
@@ -855,6 +858,17 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
 
             except Exception as e:
                 logger.warning(f"Classification failed, scoring without it: {e}")
+                # Fallback: add uncategorized amounts to "other" so they're still
+                # accounted for in total_spending. Without this, these amounts vanish
+                # from merged_totals and the score is artificially inflated.
+                fallback_total = sum(t.get("amount", 0) for t in uncategorized)
+                if fallback_total > 0:
+                    merged_totals["other"] = merged_totals.get("other", 0) + fallback_total
+                    logger.info(
+                        f"Added {len(uncategorized)} uncategorized transactions "
+                        f"(${fallback_total:.2f}) to 'other' as fallback"
+                    )
+                classification_summary["classification_failed"] = True
         else:
             logger.info("All transactions have MCC codes — classification not needed")
 
