@@ -11,70 +11,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
 from http_client import http_client
-from agent.tools.auth import get_bearer_token
+from agent.tools.auth import get_bearer_token, get_user_profile
 
 logger = logging.getLogger(__name__)
-
-
-# ---------- Internal helper: fetch_external_data ----------
-# Not exposed as a tool — calculate_spending_score handles this.
-
-
-async def fetch_external_data(consent_id: str, config: RunnableConfig) -> str:
-    """Fetch all external bank data authorized by a consent. Returns accounts, loans, transactions, repayment history, and customer identification depending on consent permissions."""
-    user_id = config["configurable"]["user_id"]
-    profile = config["configurable"].get("profile")
-    try:
-        token = await get_bearer_token(user_id)
-        params = {"consent_id": consent_id}
-        if profile:
-            params["profile"] = profile
-        response = await http_client.get(
-            f"/openfinance/secure/customers/{user_id}/external-data",
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Error fetching external data: {e.response.text}")
-        return f"Error fetching external data: {e.response.json().get('detail', str(e))}"
-    except Exception as e:
-        logger.error(f"Error fetching external data: {e}")
-        return f"Error fetching external data: {str(e)}"
-
-
-# ---------- Internal helper: fetch_spending_transactions ----------
-# Not exposed as a tool — calculate_spending_score handles this.
-
-
-async def fetch_spending_transactions(config: RunnableConfig) -> str:
-    """Fetch ALL transactions for spending analysis. Includes both sent (DEBIT) and received (CREDIT) transactions."""
-    user_id = config["configurable"]["user_id"]
-    try:
-        response = await http_client.get(
-            f"/leafybank/transactions/secure/spending/{user_id}",
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except Exception as e:
-        logger.error(f"Error fetching spending transactions: {e}")
-        return f"Error fetching spending transactions: {str(e)}"
-
-
-# ---------- Internal helper: get_spending_best_practices ----------
-# Not exposed as a tool — calculate_spending_score handles this.
-
-
-async def get_spending_best_practices() -> str:
-    """Get reference data for spending categories with ideal percentage ranges and MCC codes. Use this to categorize transactions and evaluate spending health."""
-    try:
-        response = await http_client.get("/leafybank/spending/best-practices")
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except Exception as e:
-        logger.error(f"Error fetching spending best practices: {e}")
-        return f"Error fetching spending best practices: {str(e)}"
 
 
 # ---------- Tool 4: fetch_credit_score ----------
@@ -418,7 +357,11 @@ async def evaluate_portability_offer(
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Error evaluating portability offer: {e.response.text}")
-        return f"Error evaluating portability offer: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error evaluating portability offer (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error evaluating portability offer: {e}")
         return f"Error evaluating portability offer: {str(e)}"
@@ -465,13 +408,9 @@ async def calculate_financial_position(
         token = await get_bearer_token(user_id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Resolve ObjectId from username (not trusting LLM to pass it)
-        user_resp = await http_client.post(
-            "/leafybank/users/secure/find-user",
-            json={"user_identifier": user_id},
-        )
-        user_resp.raise_for_status()
-        user_object_id = user_resp.json()["user"]["_id"]
+        # Resolve ObjectId from username (cached — avoids redundant HTTP call)
+        user = await get_user_profile(user_id)
+        user_object_id = user["_id"]
 
         balance_task = http_client.post(
             "/openfinance/secure/calculate-total-balance-for-user/",
@@ -516,7 +455,11 @@ async def calculate_financial_position(
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Error calculating financial position: {e.response.text}")
-        return f"Error calculating financial position: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error calculating financial position (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error calculating financial position: {e}")
         return f"Error calculating financial position: {str(e)}"
@@ -546,7 +489,11 @@ async def fetch_customer_identification(
         return json.dumps(response.json())
     except httpx.HTTPStatusError as e:
         logger.error(f"Error fetching customer identification: {e.response.text}")
-        return f"Error fetching customer identification: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error fetching customer identification (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error fetching customer identification: {e}")
         return f"Error fetching customer identification: {str(e)}"
@@ -560,12 +507,8 @@ async def find_user(config: RunnableConfig) -> str:
     """Look up the Leafy Bank internal user profile (name, email, etc.)."""
     user_id = config["configurable"]["user_id"]
     try:
-        response = await http_client.post(
-            "/leafybank/users/secure/find-user",
-            json={"user_identifier": user_id},
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
+        user = await get_user_profile(user_id)
+        return json.dumps({"user": user})
     except Exception as e:
         logger.error(f"Error finding user: {e}")
         return f"Error finding user: {str(e)}"
@@ -898,6 +841,9 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
                         merged_totals[cat_id] = merged_totals.get(cat_id, 0) + amount
                         newly_classified += 1
                     else:
+                        # Still uncategorized after vector search — add to "other"
+                        # so the amount is accounted for in the score calculation
+                        merged_totals["other"] = merged_totals.get("other", 0) + amount
                         still_uncat += 1
 
                 classification_summary["newly_classified"] = newly_classified
@@ -912,6 +858,17 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
 
             except Exception as e:
                 logger.warning(f"Classification failed, scoring without it: {e}")
+                # Fallback: add uncategorized amounts to "other" so they're still
+                # accounted for in total_spending. Without this, these amounts vanish
+                # from merged_totals and the score is artificially inflated.
+                fallback_total = sum(t.get("amount", 0) for t in uncategorized)
+                if fallback_total > 0:
+                    merged_totals["other"] = merged_totals.get("other", 0) + fallback_total
+                    logger.info(
+                        f"Added {len(uncategorized)} uncategorized transactions "
+                        f"(${fallback_total:.2f}) to 'other' as fallback"
+                    )
+                classification_summary["classification_failed"] = True
         else:
             logger.info("All transactions have MCC codes — classification not needed")
 
@@ -947,7 +904,11 @@ async def analyze_spending(consent_ids: list[str], config: RunnableConfig) -> st
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Error analyzing spending: {e.response.text}")
-        return f"Error analyzing spending: {e.response.json().get('detail', str(e))}"
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = e.response.text or str(e)
+        return f"Error analyzing spending (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error analyzing spending: {e}")
         return f"Error analyzing spending: {str(e)}"

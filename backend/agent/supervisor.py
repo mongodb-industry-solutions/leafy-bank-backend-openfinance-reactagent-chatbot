@@ -8,15 +8,15 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from config import AWS_REGION, SUPERVISOR_MODEL_ID
+from config import BEDROCK_CLIENT, SUPERVISOR_MODEL_ID
 from state import ConsentInfo
 
 logger = logging.getLogger(__name__)
 
 # Single LLM instance reused across all supervisor calls
 _supervisor_llm = ChatBedrockConverse(
+    client=BEDROCK_CLIENT,
     model=SUPERVISOR_MODEL_ID,
-    region_name=AWS_REGION,
     temperature=0,
 )
 
@@ -213,6 +213,56 @@ def create_supervisor_node(system_prompt: str) -> Callable:
                 "next": "FINISH",
                 "active_consents": active_consents,
             }
+
+        # --- Deterministic routing: skip LLM call when the target agent is obvious ---
+        # This saves ~0.5-1s per turn by avoiding the Haiku round-trip.
+        last_human = None
+        for m in reversed(messages):
+            if hasattr(m, "type") and m.type == "human":
+                # Skip supervisor handoff messages (prefixed with "[Supervisor handoff]")
+                if isinstance(m.content, str) and m.content.startswith("[Supervisor handoff]"):
+                    continue
+                last_human = m
+                break
+
+        previous_route = state.get("next")
+
+        if last_human:
+            # No consents yet → user is in consent flow (connecting a bank)
+            if not active_consents:
+                logger.info("Supervisor: no active consents, deterministic route → consent_agent")
+                return {
+                    "next": "consent_agent",
+                    "active_consents": active_consents,
+                }
+
+            # Active consents exist and previous route was to a sub-agent →
+            # user is continuing that flow (answering follow-up questions)
+            if previous_route in ("consent_agent", "portability_agent", "internal_data_agent"):
+                logger.info(
+                    f"Supervisor: continuing previous flow, deterministic route → {previous_route}"
+                )
+                if previous_route == "portability_agent":
+                    # Inject consent handoff for portability agent
+                    consents_summary = json.dumps(
+                        [{"consent_id": c["consent_id"], "institution": c["institution"],
+                          "purpose": c["purpose"]} for c in active_consents]
+                    )
+                    handoff = (
+                        f"[Supervisor handoff] Routing to portability agent. "
+                        f"Active consents: {consents_summary}"
+                    )
+                    return {
+                        "next": previous_route,
+                        "active_consents": active_consents,
+                        "messages": [HumanMessage(content=handoff)],
+                    }
+                return {
+                    "next": previous_route,
+                    "active_consents": active_consents,
+                }
+
+        # --- Fallback: LLM routing for ambiguous cases ---
 
         # Build context for LLM
         context_parts = []

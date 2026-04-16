@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _AGENT_DISPLAY_NAMES = {
     "consent_agent": "Consent Agent",
     "portability_agent": "Portability Agent",
+    "internal_data_agent": "Internal Data Agent",
 }
 
 # MongoDB feature used by each tool
@@ -28,9 +29,8 @@ _TOOL_MONGODB_FEATURES = {
     # Analysis tools
     "calculate_financial_position": "Aggregation Pipeline",
     "fetch_internal_accounts": "Aggregation Pipeline",
-    "find_matching_products": "Document Query",
+    "evaluate_portability_offer": "Aggregation Pipeline",
     "fetch_credit_score": "Document Query",
-    "get_underwriting_rules": "Document Query",
     "fetch_customer_identification": "Queryable Encryption",
     # Consent agent — simple queries
     "list_institutions": "Document Query",
@@ -152,7 +152,7 @@ def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]
         # Inside a sub-agent: tool execution completed
         results.extend(_handle_tools_update(update, agent_name))
 
-    elif node_name in ("consent_agent", "portability_agent"):
+    elif node_name in ("consent_agent", "portability_agent", "internal_data_agent"):
         # Parent-level: sub-agent finished
         results.append(sse_event("agent_complete", {
             "agent": node_name,

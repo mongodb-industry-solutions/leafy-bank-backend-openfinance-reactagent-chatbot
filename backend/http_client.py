@@ -10,5 +10,9 @@ from config import OPEN_FINANCE_API_BASE
 http_client = httpx.AsyncClient(
     base_url=OPEN_FINANCE_API_BASE,
     timeout=30.0,
-    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    limits=httpx.Limits(
+        max_connections=100,
+        max_keepalive_connections=20,
+        keepalive_expiry=30.0,  # default 5s drops connections between user turns
+    ),
 )

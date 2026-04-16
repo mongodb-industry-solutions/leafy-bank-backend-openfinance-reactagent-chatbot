@@ -36,7 +36,14 @@ def _derive_flow_context(state_values: dict, response_text: str, messages: list)
     lower = response_text.lower()
 
     # Portability acceptance confirmation was just sent
-    if "portability request has been submitted" in lower:
+    acceptance_phrases = [
+        "portability request has been submitted",
+        "portability offer has been accepted",
+        "processing your application",
+        "your savings timeline",
+        "thank you for choosing leafy bank",
+    ]
+    if any(phrase in lower for phrase in acceptance_phrases):
         return "portability_accepted"
 
     # Portability offer was just presented (contains actual rate/savings numbers)
@@ -52,7 +59,7 @@ def _derive_flow_context(state_values: dict, response_text: str, messages: list)
         if hasattr(msg, "type") and msg.type == "ai" and isinstance(msg.content, str):
             msg_lower = msg.content.lower()
             # Stop scanning if we hit the acceptance confirmation (past that point)
-            if "portability request has been submitted" in msg_lower:
+            if any(phrase in msg_lower for phrase in acceptance_phrases):
                 break
             if any(phrase in msg_lower for phrase in offer_phrases):
                 return "portability_offer_presented"
@@ -298,19 +305,22 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
             # response will come after the interrupt is resumed.
             if interrupt_data:
                 yield sse_event("interrupt", interrupt_data)
+                yield sse_event("done", {})
             elif response_text:
                 yield sse_event("response", {"text": response_text})
-                # Generate contextual suggestions (non-blocking — response already sent)
+                yield sse_event("done", {})
+                # Suggestions arrive after done — UI is already unblocked
                 flow_context = _derive_flow_context(state_values, response_text, messages)
                 suggestions = await generate_suggestions(messages, response_text, flow_context)
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
+            else:
+                yield sse_event("done", {})
 
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             yield sse_event("error", {"message": str(e)})
-
-        yield sse_event("done", {})
+            yield sse_event("done", {})
 
     return StreamingResponse(
         event_generator(),
@@ -358,18 +368,22 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
 
             if interrupt_data:
                 yield sse_event("interrupt", interrupt_data)
+                yield sse_event("done", {})
             elif response_text:
                 yield sse_event("response", {"text": response_text})
+                yield sse_event("done", {})
+                # Suggestions arrive after done — UI is already unblocked
                 flow_context = _derive_flow_context(state_values, response_text, messages)
                 suggestions = await generate_suggestions(messages, response_text, flow_context)
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
+            else:
+                yield sse_event("done", {})
 
         except Exception as e:
             logger.error(f"Stream resume error: {e}", exc_info=True)
             yield sse_event("error", {"message": str(e)})
-
-        yield sse_event("done", {})
+            yield sse_event("done", {})
 
     return StreamingResponse(
         event_generator(),

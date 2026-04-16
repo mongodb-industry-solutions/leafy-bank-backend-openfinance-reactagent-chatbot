@@ -15,7 +15,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from config import AWS_REGION, SUGGESTIONS_MODEL_ID
+from config import BEDROCK_CLIENT, SUGGESTIONS_MODEL_ID
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +139,8 @@ class SuggestionResponse(BaseModel):
 
 # Module-level LLM instance (same pattern as supervisor.py)
 _suggestions_llm = ChatBedrockConverse(
+    client=BEDROCK_CLIENT,
     model=SUGGESTIONS_MODEL_ID,
-    region_name=AWS_REGION,
     temperature=0.7,
 )
 
