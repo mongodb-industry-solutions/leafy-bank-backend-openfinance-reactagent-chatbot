@@ -1,6 +1,13 @@
 # Staging environment configuration for openfinance-chatbot
 # Deployed via: push to 'staging' branch
 
+security:
+  dataClassification: "Internal"
+  dataDesignation: ["MI"]
+
+ownership:
+  driEmail: "kiran.tulsulkar@mongodb.com"
+
 # Non-sensitive environment variables (injected directly)
 env:
   NODE_ENV: staging

@@ -52,7 +52,7 @@ steps:
     settings:
       dry_run: true
       chart: mongodb/web-app
-      chart_version: 4.25.0
+      chart_version: 4.30.0
       add_repos: [mongodb=https://10gen.github.io/helm-charts]
       namespace: industrysolutions
       release: openfinance-chatbot
@@ -101,7 +101,7 @@ steps:
     image: public.ecr.aws/kanopy/drone-helm:v3
     settings:
       chart: mongodb/web-app
-      chart_version: 4.25.0
+      chart_version: 4.30.0
       add_repos: [mongodb=https://10gen.github.io/helm-charts]
       namespace: industrysolutions
       release: openfinance-chatbot
@@ -156,7 +156,7 @@ steps:
     image: public.ecr.aws/kanopy/drone-helm:v3
     settings:
       chart: mongodb/web-app
-      chart_version: 4.25.0
+      chart_version: 4.30.0
       add_repos: [mongodb=https://10gen.github.io/helm-charts]
       namespace: industrysolutions
       release: openfinance-chatbot
