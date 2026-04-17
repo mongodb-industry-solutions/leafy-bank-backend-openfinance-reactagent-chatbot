@@ -1,6 +1,13 @@
 # Production environment configuration for openfinance-chatbot
 # Deployed via: push to 'main' branch
 
+security:
+  dataClassification: "Internal"
+  dataDesignation: ["MI"]
+
+ownership:
+  driEmail: "kiran.tulsulkar@mongodb.com"
+
 # Non-sensitive environment variables (injected directly)
 env:
   NODE_ENV: production
