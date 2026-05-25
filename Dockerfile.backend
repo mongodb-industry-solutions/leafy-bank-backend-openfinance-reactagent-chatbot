@@ -1,5 +1,5 @@
 # ---- Stage 0: Node.js base (for MCP server) ----
-FROM node:20-slim AS node-base
+FROM node:26-slim AS node-base
 
 # ---- Stage 1: Build ----
 FROM python:3.11-slim-bookworm AS builder
