@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -93,11 +94,20 @@ async def lifespan(app: FastAPI):
         "disconnect", "explain", "export", "list-databases", "mongodb-logs",
         "rename-collection", "switch-connection",
     ])
+    # Prefer the pinned binary pre-installed in the image (see Dockerfile.backend)
+    # for a deterministic, offline boot; fall back to a pinned npx for local dev
+    # where it isn't installed globally. Never use a floating @latest.
+    MCP_SERVER_VERSION = "1.13.0"
+    if shutil.which("mongodb-mcp-server"):
+        mcp_command, mcp_args = "mongodb-mcp-server", []
+    else:
+        mcp_command = "npx"
+        mcp_args = ["-y", f"mongodb-mcp-server@{MCP_SERVER_VERSION}"]
     mcp_client = MultiServerMCPClient(
         {
             "mongodb": {
-                "command": "npx",
-                "args": ["-y", "mongodb-mcp-server@latest"],
+                "command": mcp_command,
+                "args": mcp_args,
                 "transport": "stdio",
                 "env": {
                     **os.environ,

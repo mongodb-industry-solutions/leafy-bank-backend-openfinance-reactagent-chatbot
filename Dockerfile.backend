@@ -1,5 +1,6 @@
 # ---- Stage 0: Node.js base (for MCP server) ----
-FROM node:20-slim AS node-base
+# Node 22: mongodb-mcp-server requires ^20.19 || ^22.13 || >=24; Node 20 is deprecated upstream.
+FROM node:22-slim AS node-base
 
 # ---- Stage 1: Build ----
 FROM python:3.11-slim-bookworm AS builder
@@ -30,12 +31,15 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Copy Node.js runtime from official image (required for npx mongodb-mcp-server)
+# Copy Node.js runtime from official image (required to run mongodb-mcp-server)
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=node-base /usr/local/include/node /usr/local/include/node
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# Pre-install the MongoDB MCP server (pinned) so startup does no runtime npm fetch
+RUN npm install -g mongodb-mcp-server@1.13.0
 
 # Copy crypt_shared library and venv from builder
 COPY --from=builder /opt/mongo_crypt/lib/mongo_crypt_v1.so /opt/mongo_crypt/lib/mongo_crypt_v1.so
