@@ -138,12 +138,24 @@ async def lifespan(app: FastAPI):
         mcp_tools = [t for t in all_mcp_tools if t.name in allowed_tools]
         logger.info(f"{len(mcp_tools)} MCP tools passed to internal data agent")
 
-        checkpointer = get_checkpointer()
-        app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
-        app.state.mcp_client = mcp_client
-        app.state.mcp_tools = mcp_tools
-        app.state.profile_service = profile_service
-        logger.info("Multi-agent graph initialized")
+        # Surface the real startup error here. Any exception raised inside this
+        # still-open MCP session unwinds through the stdio teardown, which raises
+        # anyio.BrokenResourceError and masks the original (see defects.md
+        # 2026-03-26). Log the true cause before re-raising.
+        try:
+            checkpointer = get_checkpointer()
+            app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
+            app.state.mcp_client = mcp_client
+            app.state.mcp_tools = mcp_tools
+            app.state.profile_service = profile_service
+            logger.info("Multi-agent graph initialized")
+        except Exception:
+            logger.exception(
+                "Chatbot startup failed during checkpointer/graph init "
+                "(real cause surfaced before MCP session teardown masks it as "
+                "BrokenResourceError)"
+            )
+            raise
 
         yield
 
