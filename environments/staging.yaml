@@ -42,7 +42,7 @@ serviceAccount:
 extraVolumes:
   - name: encryption-config
     configMap:
-      name: chatbot-encryption-config
+      name: openfinance-chatbot-encryption-config
 
 extraVolumeMounts:
   - name: encryption-config

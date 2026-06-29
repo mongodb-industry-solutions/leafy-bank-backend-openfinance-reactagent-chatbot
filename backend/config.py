@@ -50,6 +50,9 @@ AWS_KMS_KEY_ARN = os.getenv("AWS_KMS_KEY_ARN", "")
 CRYPT_SHARED_LIB_PATH = os.getenv("CRYPT_SHARED_LIB_PATH", "")
 LOCAL_MASTER_KEY_PATH = os.getenv("LOCAL_MASTER_KEY_PATH", "")
 
+# Admin API
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
 # Open Finance Backend
 OPEN_FINANCE_API_URL = os.getenv("OPEN_FINANCE_API_URL", "http://localhost:8003")
 OPEN_FINANCE_API_BASE = f"{OPEN_FINANCE_API_URL}/api/v1"
