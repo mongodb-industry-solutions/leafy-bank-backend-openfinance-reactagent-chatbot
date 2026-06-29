@@ -3,14 +3,24 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
+from config import ADMIN_API_KEY
 from graph import get_checkpointer, build_graph, profile_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+_api_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
+
+
+async def _verify_admin_key(key: str = Security(_api_key_header)):
+    if not ADMIN_API_KEY or key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+router = APIRouter(dependencies=[Depends(_verify_admin_key)])
 
 
 class CreateProfileRequest(BaseModel):
