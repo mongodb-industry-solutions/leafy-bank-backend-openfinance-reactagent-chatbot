@@ -15,5 +15,5 @@ class ConsentInfo(TypedDict):
 
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
-    next: str  # "consent_agent" | "portability_agent" | "internal_data_agent" | "FINISH"
+    next: str  # "consent_agent" | "internal_data_agent" | "FINISH"
     active_consents: list[ConsentInfo]  # Multiple banks

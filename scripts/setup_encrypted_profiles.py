@@ -38,7 +38,7 @@ if not MONGODB_URI:
 
 DB_NAME = os.getenv("DATABASE_NAME", "agentic_open_finance")
 COLL_NAME = "encrypted_agent_profiles"
-KEY_VAULT_NAMESPACE = "encryption.__keyVault"
+KEY_VAULT_NAMESPACE = "encryption.__keyVault_agent_profiles"
 MASTER_KEY_PATH = os.getenv(
     "LOCAL_MASTER_KEY_PATH",
     str(BACKEND_DIR / "master-key.bin"),
