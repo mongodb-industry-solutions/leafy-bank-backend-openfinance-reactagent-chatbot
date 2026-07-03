@@ -14,19 +14,14 @@ logger = logging.getLogger(__name__)
 
 # All available permissions (superset) — used for general access (no purpose)
 ALL_PERMISSIONS = [
-    "LOANS_READ",
+    "PRODUCTS_READ",
     "ACCOUNTS_READ",
     "ACCOUNTS_BALANCES_READ",
-    "REPAYMENT_HISTORY_READ",
-    "CUSTOMER_IDENTIFICATION_READ",
     "TRANSACTIONS_READ",
 ]
 
 # Default permissions per consent purpose
 PURPOSE_PERMISSIONS = {
-    "PERSONAL_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
-    "PAYROLL_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
-    "VEHICLE_LOAN_PORTABILITY": ALL_PERMISSIONS.copy(),
     "FINANCIAL_ADVICE": [
         "ACCOUNTS_READ",
         "ACCOUNTS_BALANCES_READ",
@@ -37,12 +32,10 @@ PURPOSE_PERMISSIONS = {
 # User-facing benefit descriptions per permission — the agent presents these
 # directly from tool output instead of recalling from prompt memory.
 _PERMISSION_BENEFITS = {
-    "LOANS_READ": "Loan details — current rate, outstanding balance, remaining term. Feeds the portability calculation to guarantee exact savings before you commit.",
-    "ACCOUNTS_READ": "Account info — account ownership and banking relationship. Confirms eligibility and strengthens the application.",
-    "ACCOUNTS_BALANCES_READ": "Balances — current balances across accounts. Feeds debt-to-income ratio, may unlock better rate tiers.",
-    "REPAYMENT_HISTORY_READ": "Repayment history — payment track record over recent months. Demonstrates reliability, helps qualify for premium rates.",
-    "CUSTOMER_IDENTIFICATION_READ": "Identity verification — one-time regulatory check required by the Central Bank. Never stored after verification.",
-    "TRANSACTIONS_READ": "Transaction history — income deposits and spending patterns. Builds credit profile — typically reduces rates by 0.5-2.5% (est. R$1,200-3,600/year depending on loan size).",
+    "PRODUCTS_READ": "Product details — loans and credit products, current rates, outstanding balances, remaining terms. Gives a complete picture of your obligations across banks.",
+    "ACCOUNTS_READ": "Account info — account ownership and banking relationship. Confirms eligibility and completes your financial overview.",
+    "ACCOUNTS_BALANCES_READ": "Balances — current balances across accounts. Feeds debt-to-income ratio and net-worth calculations.",
+    "TRANSACTIONS_READ": "Transaction history — income deposits and spending patterns. Powers spending insights and personalized financial advice.",
 }
 
 _FINANCIAL_ADVICE_BENEFITS = {
@@ -75,7 +68,7 @@ async def get_default_permissions(purpose: Optional[str] = None) -> str:
     The returned descriptions are written for the user — present them directly.
 
     Args:
-        purpose: The consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit or pass null for general access (all permissions).
+        purpose: The consent purpose. Currently only FINANCIAL_ADVICE is supported. Omit or pass null for general access (all permissions).
     """
     if purpose is None:
         permissions = ALL_PERMISSIONS
@@ -105,8 +98,8 @@ async def create_consent(
 
     Args:
         source_institution_name: Name of the external bank to connect to
-        permissions: List of approved permissions (e.g. ["LOANS_READ", "ACCOUNTS_READ"])
-        purpose: Consent purpose. One of: PERSONAL_LOAN_PORTABILITY, PAYROLL_LOAN_PORTABILITY, VEHICLE_LOAN_PORTABILITY, FINANCIAL_ADVICE. Omit for general access (all permissions).
+        permissions: List of approved permissions (e.g. ["PRODUCTS_READ", "ACCOUNTS_READ"])
+        purpose: Consent purpose. Currently only FINANCIAL_ADVICE is supported. Omit for general access (all permissions).
     """
     user_id = config["configurable"]["user_id"]
     try:
@@ -374,29 +367,27 @@ async def revoke_consent(consent_id: str, config: RunnableConfig) -> str:
 
 
 @tool
-async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
-    """Verify what data is accessible after consent approval. Returns a summary with
-    counts and key values for each data category (accounts, loans, transactions,
-    repayment history, customer identification).
+async def fetch_and_cache_data(consent_id: str, config: RunnableConfig) -> str:
+    """Pull the consent-permitted data from the connected bank and cache it in Leafy Bank.
 
-    Use this after a consent is approved to confirm data access and show the user
-    exactly what was received vs what was not.
+    Call this once, immediately after a consent is approved. It fetches accounts,
+    products, and transactions (gated by the consent's permissions), caches them so
+    later financial-advice queries read from the cache without re-consuming the
+    consent, and returns a summary of what was received (with per-category counts and
+    key values) plus `cached_counts` per resource type.
 
-    WARNING: For one-time consents (duration = 0), calling this will consume the
-    consent. Only use with duration-based consents (duration > 0).
+    The consent must be AUTHORISED and DURATION_BASED (all consents created here are
+    30-day duration-based, so this always applies).
 
     Args:
-        consent_id: The approved consent ID to verify data access for
+        consent_id: The approved consent ID to fetch and cache data for
     """
     user_id = config["configurable"]["user_id"]
-    profile = config["configurable"].get("profile")
     try:
         token = await get_bearer_token(user_id)
         params = {"consent_id": consent_id}
-        if profile:
-            params["profile"] = profile
-        response = await http_client.get(
-            f"/openfinance/secure/customers/{user_id}/external-data",
+        response = await http_client.post(
+            f"/openfinance/secure/customers/{user_id}/fetch-and-cache",
             params=params,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -477,25 +468,6 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
         else:
             summary["data_received"]["transactions"] = {"received": False}
 
-        # Repayment history
-        repayment = data.get("repayment_history")
-        if repayment:
-            summary["data_received"]["repayment_history"] = {
-                "received": True,
-                "count": len(repayment),
-            }
-        else:
-            summary["data_received"]["repayment_history"] = {"received": False}
-
-        # Customer identification (KYC)
-        kyc = data.get("customer_identification")
-        if kyc:
-            summary["data_received"]["customer_identification"] = {
-                "received": True,
-            }
-        else:
-            summary["data_received"]["customer_identification"] = {"received": False}
-
         # Build not_received list
         not_received = [
             category
@@ -505,15 +477,20 @@ async def verify_consent_data(consent_id: str, config: RunnableConfig) -> str:
         if not_received:
             summary["not_received"] = not_received
 
+        # Per-resource counts of what was cached (populated by fetch-and-cache)
+        cached_counts = data.get("cached_counts")
+        if cached_counts is not None:
+            summary["cached_counts"] = cached_counts
+
         return json.dumps(summary)
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"Error verifying consent data: {e.response.text}")
+        logger.error(f"Error fetching and caching consent data: {e.response.text}")
         try:
             detail = e.response.json().get("detail", str(e))
         except Exception:
             detail = e.response.text or str(e)
-        return f"Error verifying consent data (HTTP {e.response.status_code}): {detail}"
+        return f"Error fetching and caching consent data (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
-        logger.error(f"Error verifying consent data: {e}")
-        return f"Error verifying consent data: {str(e)}"
+        logger.error(f"Error fetching and caching consent data: {e}")
+        return f"Error fetching and caching consent data: {str(e)}"

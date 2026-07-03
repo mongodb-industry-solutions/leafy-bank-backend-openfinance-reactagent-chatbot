@@ -28,7 +28,7 @@ AGENT_TOOLS = {
             "request_bank_login",
             "approve_consent",
             "revoke_consent",
-            "verify_consent_data",
+            "fetch_and_cache_data",
         ]
     },
     "internal_data_agent": {
