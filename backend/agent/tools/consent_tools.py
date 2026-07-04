@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # All available permissions (superset) — used for general access (no purpose)
 ALL_PERMISSIONS = [
-    "PRODUCTS_READ",
+    "LOANS_READ",
     "ACCOUNTS_READ",
     "ACCOUNTS_BALANCES_READ",
     "TRANSACTIONS_READ",
@@ -26,13 +26,14 @@ PURPOSE_PERMISSIONS = {
         "ACCOUNTS_READ",
         "ACCOUNTS_BALANCES_READ",
         "TRANSACTIONS_READ",
+        "LOANS_READ",
     ],
 }
 
 # User-facing benefit descriptions per permission — the agent presents these
 # directly from tool output instead of recalling from prompt memory.
 _PERMISSION_BENEFITS = {
-    "PRODUCTS_READ": "Product details — loans and credit products, current rates, outstanding balances, remaining terms. Gives a complete picture of your obligations across banks.",
+    "LOANS_READ": "Product details — loans and credit products, current rates, outstanding balances, remaining terms. Gives a complete picture of your obligations across banks.",
     "ACCOUNTS_READ": "Account info — account ownership and banking relationship. Confirms eligibility and completes your financial overview.",
     "ACCOUNTS_BALANCES_READ": "Balances — current balances across accounts. Feeds debt-to-income ratio and net-worth calculations.",
     "TRANSACTIONS_READ": "Transaction history — income deposits and spending patterns. Powers spending insights and personalized financial advice.",
@@ -42,6 +43,7 @@ _FINANCIAL_ADVICE_BENEFITS = {
     "ACCOUNTS_READ": "Account info — complete overview, helps spot optimization opportunities.",
     "ACCOUNTS_BALANCES_READ": "Balances — full financial picture across all banks.",
     "TRANSACTIONS_READ": "Transaction history — identifies where you're overspending vs doing well.",
+    "LOANS_READ": "Loans & credit products — current rates, balances, and terms so advice reflects your full debt picture.",
 }
 
 
@@ -98,7 +100,7 @@ async def create_consent(
 
     Args:
         source_institution_name: Name of the external bank to connect to
-        permissions: List of approved permissions (e.g. ["PRODUCTS_READ", "ACCOUNTS_READ"])
+        permissions: List of approved permissions (e.g. ["LOANS_READ", "ACCOUNTS_READ"])
         purpose: Consent purpose. Currently only FINANCIAL_ADVICE is supported. Omit for general access (all permissions).
     """
     user_id = config["configurable"]["user_id"]

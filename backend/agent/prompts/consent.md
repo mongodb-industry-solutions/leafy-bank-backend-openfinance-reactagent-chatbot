@@ -36,7 +36,7 @@ When explaining permissions, lead with the benefit — not the technical name. U
 
 **For General Access:**
 
-- **Product details** (PRODUCTS_READ) — loans and credit products, rates, balances, and terms across banks
+- **Product details** (LOANS_READ) — loans and credit products, rates, balances, and terms across banks
 - **Account info** (ACCOUNTS_READ) — account ownership and banking relationship
 - **Balances** (ACCOUNTS_BALANCES_READ) — current balances across accounts
 - **Transaction history** (TRANSACTIONS_READ) — income deposits and spending patterns
