@@ -145,7 +145,7 @@ Agent profiles are stored with MongoDB Queryable Encryption. The setup requires 
    cd backend && poetry run python ../scripts/setup_encrypted_profiles.py
    ```
 
-   This creates the `encrypted_agent_profiles` collection, generates DEKs, and saves `encryption_config.json` (gitignored).
+   This creates the `openFinanceAgentProfiles` collection, generates DEKs, and saves `encryption_config.json` (gitignored).
 
 3. Agent prompts are seeded from `.md` files on first startup. To force a re-sync from files:
 
@@ -203,8 +203,8 @@ The Leafy Bank internal data agent requires seed data in your Atlas cluster. Imp
    CHAT_COMPLETIONS_MODEL_ID=us.anthropic.claude-sonnet-4-6
 
    # Checkpointer Collections
-   CHECKPOINTS_AIO_COLLECTION=checkpoints_aio
-   CHECKPOINTS_WRITES_AIO_COLLECTION=checkpoint_writes_aio
+   CHECKPOINTS_AIO_COLLECTION=openFinanceCheckpoints
+   CHECKPOINTS_WRITES_AIO_COLLECTION=openFinanceCheckpointWrites
 
    # Open Finance Backend API
    OPEN_FINANCE_API_URL=http://localhost:8003

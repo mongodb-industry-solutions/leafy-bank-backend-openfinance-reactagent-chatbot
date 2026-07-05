@@ -15,8 +15,8 @@ env:
   AWS_REGION: us-east-1
   CHAT_COMPLETIONS_MODEL_ID: us.anthropic.claude-sonnet-4-6
   SUPERVISOR_MODEL_ID: us.anthropic.claude-haiku-4-5-20251001-v1:0
-  CHECKPOINTS_AIO_COLLECTION: checkpoints_aio
-  CHECKPOINTS_WRITES_AIO_COLLECTION: checkpoint_writes_aio
+  CHECKPOINTS_AIO_COLLECTION: openFinanceCheckpoints
+  CHECKPOINTS_WRITES_AIO_COLLECTION: openFinanceCheckpointWrites
   # Internal K8s service URL for the Open Finance backend
   # Format: http://<release-name>-web-app:80
   OPEN_FINANCE_API_URL: http://open-finance-next-gen-web-app:80
