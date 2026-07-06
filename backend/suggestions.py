@@ -5,7 +5,7 @@ using a lightweight Haiku model. Suggestions appear as clickable chips
 in the frontend, guiding users through the demo flow.
 
 Flow-state awareness: suggestions are constrained based on the current
-conversation step (consent, portability analysis, offer presented, etc.)
+conversation step (consent, financial advice, etc.)
 to prevent dead-end chips and ensure contextual relevance.
 """
 
@@ -40,43 +40,6 @@ BLOCKED (never suggest these regardless of context):
 - Comparing Leafy Bank's rates against themselves"""
 
 _FLOW_RULES = {
-    "portability_offer_presented": """CURRENT CONTEXT: A loan portability offer has just been presented with full details.
-
-REQUIRED: Generate exactly these 3 suggestions in this order:
-1. "Accept Loan Portability Offer" (MUST be first)
-2. "Decline Offer" (MUST be second)
-3. "I have additional questions" (MUST be third)
-
-Do NOT deviate from these three suggestions. Do NOT add alternatives.
-
-BLOCKED in this context:
-- Anything with: spending, breakdown, budget, financial position
-- Anything with: email, status, transfer, switch, apply, start""",
-
-    "portability_accepted": """CURRENT CONTEXT: The user just accepted a portability offer and received confirmation.
-
-ALLOWED suggestions (pick 2-3 from these):
-- "Analyze another loan type"
-- "Connect another bank"
-- "That's all, thank you"
-
-BLOCKED: anything about status, email, tracking, transfer details, spam""",
-
-    "portability_analysis": """CURRENT CONTEXT: Loan portability analysis is in progress (data gathered, pre-offer).
-
-If the assistant is asking whether the user wants to proceed with analysis or next steps, the first suggestion MUST be exactly "Analyze Loan Portability Offer".
-
-ALLOWED suggestions:
-- "Analyze Loan Portability Offer" (MUST be first when assistant asks about proceeding)
-- Direct answers to the assistant's question
-- "I have additional questions"
-
-BLOCKED:
-- Anything with: rate comparison, compare rates, rate difference, rate analysis
-- Anything with: port, transfer, switch, move, apply, start, proceed
-- Anything with: spending breakdown, budget, financial position
-- Anything with: email, status, check""",
-
     "consent_flow": """CURRENT CONTEXT: The user is going through the consent/bank connection flow.
 
 ALLOWED suggestions:
@@ -89,7 +52,7 @@ BLOCKED:
 - Anything with: port, transfer, switch, move, apply, start, proceed
 - Anything with: email, status""",
 
-    "financial_advice": """CURRENT CONTEXT: Financial advice flow (spending analysis, not portability).
+    "financial_advice": """CURRENT CONTEXT: Financial advice flow (spending analysis over connected bank data).
 
 ALLOWED suggestions:
 - "Show spending breakdown"
@@ -186,8 +149,7 @@ async def generate_suggestions(
         messages: Full conversation message history.
         response_text: The assistant's latest response text.
         flow_context: Current flow state for suggestion constraint rules.
-            One of: portability_offer_presented, portability_accepted,
-            portability_analysis, consent_flow, financial_advice, general.
+            One of: consent_flow, financial_advice, general.
     """
     try:
         context = _get_recent_conversation(messages)

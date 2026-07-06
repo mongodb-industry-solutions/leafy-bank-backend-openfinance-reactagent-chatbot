@@ -34,47 +34,14 @@ logger = logging.getLogger(__name__)
 
 def _derive_flow_context(state_values: dict, response_text: str, messages: list) -> str:
     """Derive the suggestion flow context from graph state, response text, and message history."""
-    lower = response_text.lower()
-
-    # Portability acceptance confirmation was just sent
-    acceptance_phrases = [
-        "portability request has been submitted",
-        "portability offer has been accepted",
-        "processing your application",
-        "your savings timeline",
-        "thank you for choosing leafy bank",
-    ]
-    if any(phrase in lower for phrase in acceptance_phrases):
-        return "portability_accepted"
-
-    # Portability offer was just presented (contains actual rate/savings numbers)
-    # These phrases only appear in the offer itself, not in "Would you like to analyze..."
-    offer_phrases = ["qualified rate", "total savings over", "monthly savings",
-                     "rate improvement", "would you like to accept this"]
-    if any(phrase in lower for phrase in offer_phrases):
-        return "portability_offer_presented"
-
-    # Check if an offer was presented EARLIER in the conversation — if so,
-    # follow-up Q&A should still show Accept/Decline chips, not "Analyze"
-    for msg in reversed(messages):
-        if hasattr(msg, "type") and msg.type == "ai" and isinstance(msg.content, str):
-            msg_lower = msg.content.lower()
-            # Stop scanning if we hit the acceptance confirmation (past that point)
-            if any(phrase in msg_lower for phrase in acceptance_phrases):
-                break
-            if any(phrase in msg_lower for phrase in offer_phrases):
-                return "portability_offer_presented"
-
     active_consents = state_values.get("active_consents", [])
 
     # No active consents — likely in consent flow
     if not active_consents:
         return "consent_flow"
 
-    # Distinguish portability vs financial advice by consent purpose
+    # Active consent → financial advice flow (spending/position analysis)
     purposes = [c.get("purpose", "") for c in active_consents]
-    if any("PORTABILITY" in (p or "").upper() for p in purposes):
-        return "portability_analysis"
     if any((p or "").upper() == "FINANCIAL_ADVICE" for p in purposes):
         return "financial_advice"
 

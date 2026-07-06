@@ -1,4 +1,4 @@
-"""Parent StateGraph — orchestrates supervisor, consent agent, portability agent, and internal data agent."""
+"""Parent StateGraph — orchestrates supervisor, consent agent, and internal data agent."""
 
 import logging
 from typing import Optional
@@ -16,7 +16,6 @@ from agent.db.mdb import MongoDBConnector
 from agent.db.encrypted_connector import get_encrypted_connector
 from agent.db.agent_profiles import AgentProfileService
 from agent.consent_agent import create_consent_agent
-from agent.portability_agent import create_portability_agent
 from agent.internal_data_agent import create_internal_data_agent
 from agent.supervisor import create_supervisor_node
 
@@ -64,7 +63,6 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     logger.info("Agent prompts loaded from encrypted MongoDB")
 
     consent_agent = create_consent_agent(prompts["consent_agent"])
-    portability_agent = create_portability_agent(prompts["portability_agent"])
     internal_data_agent = create_internal_data_agent(prompts["internal_data_agent"], mcp_tools or [])
     supervisor = create_supervisor_node(prompts["supervisor"])
 
@@ -73,7 +71,6 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     # Nodes
     workflow.add_node("supervisor", supervisor)
     workflow.add_node("consent_agent", consent_agent)
-    workflow.add_node("portability_agent", portability_agent)
     workflow.add_node("internal_data_agent", internal_data_agent)
 
     # Edges
@@ -83,13 +80,11 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
         _route_from_supervisor,
         {
             "consent_agent": "consent_agent",
-            "portability_agent": "portability_agent",
             "internal_data_agent": "internal_data_agent",
             "FINISH": END,
         },
     )
     workflow.add_edge("consent_agent", "supervisor")
-    workflow.add_edge("portability_agent", "supervisor")
     workflow.add_edge("internal_data_agent", "supervisor")
 
     graph = workflow.compile(checkpointer=checkpointer)

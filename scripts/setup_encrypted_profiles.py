@@ -1,7 +1,7 @@
 """
 One-time setup: Create the encrypted agent profiles collection with Queryable Encryption.
 
-Creates the `encrypted_agent_profiles` collection in the DATABASE_NAME database,
+Creates the `openFinanceAgentProfiles` collection in the DATABASE_NAME database,
 generates data encryption keys (DEKs) for each encrypted field, creates indexes,
 and saves the resulting encrypted_fields_map to encryption_config.json for runtime use.
 
@@ -36,9 +36,9 @@ if not MONGODB_URI:
     print("ERROR: MONGODB_URI not set in backend/.env")
     sys.exit(1)
 
-DB_NAME = os.getenv("DATABASE_NAME", "agentic_open_finance")
-COLL_NAME = "encrypted_agent_profiles"
-KEY_VAULT_NAMESPACE = "encryption.__keyVault"
+DB_NAME = os.getenv("DATABASE_NAME", "fin_migration")
+COLL_NAME = "openFinanceAgentProfiles"
+KEY_VAULT_NAMESPACE = "encryption.__keyVault_agent_profiles"
 MASTER_KEY_PATH = os.getenv(
     "LOCAL_MASTER_KEY_PATH",
     str(BACKEND_DIR / "master-key.bin"),

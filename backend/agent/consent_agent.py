@@ -15,7 +15,7 @@ from agent.tools.consent_tools import (
     request_bank_login,
     approve_consent,
     revoke_consent,
-    verify_consent_data,
+    fetch_and_cache_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ TOOLS = [
     request_bank_login,
     approve_consent,
     revoke_consent,
-    verify_consent_data,
+    fetch_and_cache_data,
 ]
 
 

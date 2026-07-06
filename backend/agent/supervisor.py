@@ -1,11 +1,11 @@
-"""Supervisor node — routes between consent_agent, portability_agent, and FINISH."""
+"""Supervisor node — routes between consent_agent, internal_data_agent, and FINISH."""
 
 import json
 import logging
 from typing import Callable, Literal, Optional
 
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from config import BEDROCK_CLIENT, SUPERVISOR_MODEL_ID
@@ -24,7 +24,7 @@ _supervisor_llm = ChatBedrockConverse(
 class RouterDecision(BaseModel):
     """Supervisor routing decision."""
 
-    next: Literal["consent_agent", "portability_agent", "internal_data_agent", "FINISH"] = Field(
+    next: Literal["consent_agent", "internal_data_agent", "FINISH"] = Field(
         description="Which agent to route to, or FINISH to end the turn."
     )
     response: str = Field(
@@ -157,13 +157,7 @@ def create_supervisor_node(system_prompt: str) -> Callable:
 
             # Fallback: consent agent didn't respond (edge case) — generate
             # a confirmation message so the user always sees one.
-            if "LOAN_PORTABILITY" in (latest_purpose or "").upper():
-                analysis_desc = (
-                    "I can now analyze your external bank data to evaluate loan "
-                    "portability — this checks your spending patterns, credit score, "
-                    "and finds better Leafy Bank rates."
-                )
-            elif (latest_purpose or "").upper() == "FINANCIAL_ADVICE":
+            if (latest_purpose or "").upper() == "FINANCIAL_ADVICE":
                 analysis_desc = (
                     "I can now analyze your spending across all your accounts, "
                     "compare against best practices, and provide a financial "
@@ -238,25 +232,10 @@ def create_supervisor_node(system_prompt: str) -> Callable:
 
             # Active consents exist and previous route was to a sub-agent →
             # user is continuing that flow (answering follow-up questions)
-            if previous_route in ("consent_agent", "portability_agent", "internal_data_agent"):
+            if previous_route in ("consent_agent", "internal_data_agent"):
                 logger.info(
                     f"Supervisor: continuing previous flow, deterministic route → {previous_route}"
                 )
-                if previous_route == "portability_agent":
-                    # Inject consent handoff for portability agent
-                    consents_summary = json.dumps(
-                        [{"consent_id": c["consent_id"], "institution": c["institution"],
-                          "purpose": c["purpose"]} for c in active_consents]
-                    )
-                    handoff = (
-                        f"[Supervisor handoff] Routing to portability agent. "
-                        f"Active consents: {consents_summary}"
-                    )
-                    return {
-                        "next": previous_route,
-                        "active_consents": active_consents,
-                        "messages": [HumanMessage(content=handoff)],
-                    }
                 return {
                     "next": previous_route,
                     "active_consents": active_consents,
@@ -294,25 +273,6 @@ def create_supervisor_node(system_prompt: str) -> Callable:
         # When FINISH, add the supervisor's response as an AI message
         if decision.next == "FINISH" and decision.response:
             result["messages"] = [AIMessage(content=decision.response)]
-        # When routing to a sub-agent with active consents, inject a handoff
-        # message so the agent has consent info clearly in recent history.
-        # Uses HumanMessage — Claude 4.6 rejects conversations ending with an
-        # assistant message (prefill no longer supported). The handoff is context
-        # *for* the sub-agent, not a response *from* the assistant.
-        elif decision.next == "portability_agent" and active_consents:
-            consents_summary = json.dumps(
-                [{"consent_id": c["consent_id"], "institution": c["institution"],
-                  "purpose": c["purpose"]} for c in active_consents]
-            )
-            handoff = (
-                f"[Supervisor handoff] Routing to portability agent. "
-                f"Active consents: {consents_summary}"
-            )
-            msgs = []
-            if decision.response:
-                msgs.append(AIMessage(content=decision.response))
-            msgs.append(HumanMessage(content=handoff))
-            result["messages"] = msgs
 
         return result
 

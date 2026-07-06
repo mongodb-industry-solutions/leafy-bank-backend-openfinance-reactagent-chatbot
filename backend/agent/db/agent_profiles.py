@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 # Agent name → prompt file path (relative to backend/agent/prompts/)
 PROMPT_FILES = {
     "consent_agent": "consent.md",
-    "portability_agent": "portability.md",
     "internal_data_agent": "internal_data.md",
     "supervisor": "supervisor.md",
 }
@@ -29,18 +28,7 @@ AGENT_TOOLS = {
             "request_bank_login",
             "approve_consent",
             "revoke_consent",
-            "verify_consent_data",
-        ]
-    },
-    "portability_agent": {
-        "tools": [
-            "find_user",
-            "analyze_spending",
-            "fetch_customer_identification",
-            "fetch_credit_score",
-            "evaluate_portability_offer",
-            "fetch_internal_accounts",
-            "calculate_financial_position",
+            "fetch_and_cache_data",
         ]
     },
     "internal_data_agent": {
@@ -55,7 +43,7 @@ AGENT_TOOLS = {
     },
     "supervisor": {
         "tools": [],
-        "routes_to": ["consent_agent", "portability_agent", "internal_data_agent", "FINISH"],
+        "routes_to": ["consent_agent", "internal_data_agent", "FINISH"],
     },
 }
 
