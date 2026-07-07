@@ -104,6 +104,10 @@ async def create_consent(
         purpose: Consent purpose. Currently only FINANCIAL_ADVICE is supported. Omit for general access (all permissions).
     """
     user_id = config["configurable"]["user_id"]
+    # Scope duplicate detection to this conversation (browser session) so a new
+    # session can create its own consent for a bank without colliding with an
+    # active consent from another session.
+    session_id = config["configurable"].get("thread_id")
     try:
         token = await get_bearer_token(user_id)
         body = {
@@ -112,6 +116,8 @@ async def create_consent(
             "expiration_days": 30,
             "permissions": permissions,
         }
+        if session_id is not None:
+            body["session_id"] = session_id
         if purpose is not None:
             body["purpose"] = purpose.upper()
         response = await http_client.post(
