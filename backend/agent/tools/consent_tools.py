@@ -415,7 +415,7 @@ async def fetch_and_cache_data(consent_id: str, config: RunnableConfig) -> str:
                         "type": a.get("AccountType", "unknown"),
                         "sub_type": a.get("AccountSubType"),
                         "balance": a.get("AccountBalance"),
-                        "currency": a.get("Currency", "BRL"),
+                        "currency": a.get("AccountCurrency", "USD"),
                     }
                     for a in accounts
                 ],
