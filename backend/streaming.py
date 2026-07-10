@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Human-readable agent names
 _AGENT_DISPLAY_NAMES = {
     "consent_agent": "Consent Agent",
-    "internal_data_agent": "Internal Data Agent",
+    "financial_advice_agent": "Financial Advice Agent",
 }
 
 # MongoDB feature used by each tool
@@ -55,7 +55,7 @@ def process_stream_event(event: tuple) -> list[str]:
     namespace_tuple:
         () = parent graph
         ("consent_agent:xxx",) = inside consent_agent sub-graph
-        ("internal_data_agent:xxx",) = inside internal_data_agent sub-graph
+        ("financial_advice_agent:xxx",) = inside financial_advice_agent sub-graph
     """
     if not isinstance(event, tuple):
         logger.debug("Skipping non-tuple event: %s", type(event))
@@ -143,7 +143,7 @@ def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]
         # Inside a sub-agent: tool execution completed
         results.extend(_handle_tools_update(update, agent_name))
 
-    elif node_name in ("consent_agent", "internal_data_agent"):
+    elif node_name in ("consent_agent", "financial_advice_agent"):
         # Parent-level: sub-agent finished
         results.append(sse_event("agent_complete", {
             "agent": node_name,

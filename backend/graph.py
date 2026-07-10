@@ -1,4 +1,4 @@
-"""Parent StateGraph — orchestrates supervisor, consent agent, and internal data agent."""
+"""Parent StateGraph — orchestrates supervisor, consent agent, and financial advice agent."""
 
 import logging
 from typing import Optional
@@ -16,7 +16,7 @@ from agent.db.mdb import MongoDBConnector
 from agent.db.encrypted_connector import get_encrypted_connector
 from agent.db.agent_profiles import AgentProfileService
 from agent.consent_agent import create_consent_agent
-from agent.internal_data_agent import create_internal_data_agent
+from agent.financial_advice_agent import create_financial_advice_agent
 from agent.supervisor import create_supervisor_node
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     Args:
         checkpointer: MongoDB checkpointer for conversation persistence.
         mcp_tools: LangChain tools from the MongoDB Atlas MCP server for the
-            internal data agent.
+            financial advice agent.
     """
     # Seed from files on first startup (idempotent — no-op if collection has data)
     profile_service.seed_from_files()
@@ -63,7 +63,7 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     logger.info("Agent prompts loaded from encrypted MongoDB")
 
     consent_agent = create_consent_agent(prompts["consent_agent"])
-    internal_data_agent = create_internal_data_agent(prompts["internal_data_agent"], mcp_tools or [])
+    financial_advice_agent = create_financial_advice_agent(prompts["financial_advice_agent"], mcp_tools or [])
     supervisor = create_supervisor_node(prompts["supervisor"])
 
     workflow = StateGraph(AgentState)
@@ -71,7 +71,7 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     # Nodes
     workflow.add_node("supervisor", supervisor)
     workflow.add_node("consent_agent", consent_agent)
-    workflow.add_node("internal_data_agent", internal_data_agent)
+    workflow.add_node("financial_advice_agent", financial_advice_agent)
 
     # Edges
     workflow.add_edge(START, "supervisor")
@@ -80,12 +80,12 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
         _route_from_supervisor,
         {
             "consent_agent": "consent_agent",
-            "internal_data_agent": "internal_data_agent",
+            "financial_advice_agent": "financial_advice_agent",
             "FINISH": END,
         },
     )
     workflow.add_edge("consent_agent", "supervisor")
-    workflow.add_edge("internal_data_agent", "supervisor")
+    workflow.add_edge("financial_advice_agent", "supervisor")
 
     graph = workflow.compile(checkpointer=checkpointer)
 

@@ -1,4 +1,4 @@
-"""Supervisor node — routes between consent_agent, internal_data_agent, and FINISH."""
+"""Supervisor node — routes between consent_agent, financial_advice_agent, and FINISH."""
 
 import json
 import logging
@@ -24,7 +24,7 @@ _supervisor_llm = ChatBedrockConverse(
 class RouterDecision(BaseModel):
     """Supervisor routing decision."""
 
-    next: Literal["consent_agent", "internal_data_agent", "FINISH"] = Field(
+    next: Literal["consent_agent", "financial_advice_agent", "FINISH"] = Field(
         description="Which agent to route to, or FINISH to end the turn."
     )
     response: str = Field(
@@ -232,7 +232,7 @@ def create_supervisor_node(system_prompt: str) -> Callable:
 
             # Active consents exist and previous route was to a sub-agent →
             # user is continuing that flow (answering follow-up questions)
-            if previous_route in ("consent_agent", "internal_data_agent"):
+            if previous_route in ("consent_agent", "financial_advice_agent"):
                 logger.info(
                     f"Supervisor: continuing previous flow, deterministic route → {previous_route}"
                 )
