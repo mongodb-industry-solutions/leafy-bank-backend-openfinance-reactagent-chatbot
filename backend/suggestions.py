@@ -52,19 +52,6 @@ BLOCKED:
 - Anything with: port, transfer, switch, move, apply, start, proceed
 - Anything with: email, status""",
 
-    "financial_advice": """CURRENT CONTEXT: Financial advice flow (spending analysis over connected bank data).
-
-ALLOWED suggestions:
-- "Show spending breakdown"
-- "Show financial position"
-- "Give me recommendations"
-- Direct answers to the assistant's question
-- "I have additional questions"
-
-BLOCKED:
-- Anything with: port, transfer, switch, move, apply, start
-- Anything with: email, status""",
-
     "general": """ALLOWED suggestions:
 - Direct answers to the assistant's question
 - Logical next steps based on what was discussed
@@ -78,6 +65,14 @@ BLOCKED:
 
 # Hard blocklist — defense-in-depth filter applied after LLM generation
 _BLOCKED_WORDS = {"email", "spam", "status", "application", "branch", "schedule", "meeting"}
+
+# Fixed chips for the post-consent financial-advice flow. This flow is
+# deterministic — the LLM is bypassed so ONLY these curated actions can ever
+# appear once a consent is granted (no LLM-invented suggestions leak in).
+_FINANCIAL_ADVICE_SUGGESTIONS = [
+    "Show spending breakdown",
+    "How much did I spend dining out?",
+]
 
 
 def _build_suggestions_prompt(flow_context: str) -> str:
@@ -151,6 +146,11 @@ async def generate_suggestions(
         flow_context: Current flow state for suggestion constraint rules.
             One of: consent_flow, financial_advice, general.
     """
+    # Post-consent financial-advice flow is deterministic — return the fixed
+    # chip set and never call the LLM, so no new suggestions can appear.
+    if flow_context == "financial_advice":
+        return list(_FINANCIAL_ADVICE_SUGGESTIONS)
+
     try:
         context = _get_recent_conversation(messages)
 
