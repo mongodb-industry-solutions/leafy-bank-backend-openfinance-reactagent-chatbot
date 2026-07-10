@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
         # Only expose read/query tools to the agent
         allowed_tools = {"find", "aggregate", "count", "list-collections", "collection-schema"}
         mcp_tools = [t for t in all_mcp_tools if t.name in allowed_tools]
-        logger.info(f"{len(mcp_tools)} MCP tools passed to internal data agent")
+        logger.info(f"{len(mcp_tools)} MCP tools passed to financial advice agent")
 
         # Surface the real startup error here. Any exception raised inside this
         # still-open MCP session unwinds through the stdio teardown, which raises

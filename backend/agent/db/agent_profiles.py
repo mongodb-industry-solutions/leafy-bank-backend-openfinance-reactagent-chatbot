@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Agent name → prompt file path (relative to backend/agent/prompts/)
 PROMPT_FILES = {
     "consent_agent": "consent.md",
-    "internal_data_agent": "internal_data.md",
+    "financial_advice_agent": "financial_advice.md",
     "supervisor": "supervisor.md",
 }
 
@@ -31,7 +31,7 @@ AGENT_TOOLS = {
             "fetch_and_cache_data",
         ]
     },
-    "internal_data_agent": {
+    "financial_advice_agent": {
         "tools": [
             "get_current_user_id",
             "find",
@@ -43,7 +43,7 @@ AGENT_TOOLS = {
     },
     "supervisor": {
         "tools": [],
-        "routes_to": ["consent_agent", "internal_data_agent", "FINISH"],
+        "routes_to": ["consent_agent", "financial_advice_agent", "FINISH"],
     },
 }
 
@@ -67,50 +67,60 @@ class AgentProfileService:
         self.collection.create_index("is_active")
         logger.info("AgentProfileService indexes ensured")
 
-    def seed_from_files(self):
-        """Seed default profiles from .md files if collection is empty.
+    def _seed_one(self, agent_name: str, filename: str) -> int:
+        """Insert a default (active) profile for one agent from its .md file.
 
-        Reads the 4 prompt files and inserts them as active profiles.
-        No-op if collection already has data.
+        Returns the system_prompt length. Raises if the file is missing.
         """
-        if self.collection.count_documents({}) > 0:
-            logger.info("Agent profiles collection already populated — skipping seed")
-            return
+        prompt_path = PROMPTS_DIR / filename
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
 
-        logger.info("Seeding agent profiles from prompt files...")
+        system_prompt = prompt_path.read_text()
         now = datetime.now(UTC)
+        doc = {
+            "agent_name": agent_name,
+            "profile_name": "default",
+            "is_active": True,
+            "system_prompt": system_prompt,
+            "tool_config": AGENT_TOOLS.get(agent_name, {"tools": []}),
+            "version": 1,
+            "created_at": now,
+            "updated_at": now,
+            "metadata": {
+                "description": f"Default profile seeded from {filename}",
+                "author": "system",
+            },
+        }
+        self.collection.insert_one(doc)
+        return len(system_prompt)
 
+    def seed_from_files(self):
+        """Seed default profiles from .md files for any agent missing one.
+
+        Idempotent per-agent: an agent with no active profile is seeded from
+        its .md file; agents that already have an active profile are left
+        untouched. Safe to call on every startup, and self-heals when a new
+        agent is added (e.g. after a rename) without wiping existing prompts.
+        """
+        seeded = []
         for agent_name, filename in PROMPT_FILES.items():
-            prompt_path = PROMPTS_DIR / filename
-            if not prompt_path.exists():
-                raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+            if self.collection.find_one({"agent_name": agent_name, "is_active": True}):
+                continue
+            chars = self._seed_one(agent_name, filename)
+            seeded.append(agent_name)
+            logger.info(f"  Seeded: {agent_name} ({chars} chars)")
 
-            system_prompt = prompt_path.read_text()
-            tool_config = AGENT_TOOLS.get(agent_name, {"tools": []})
-
-            doc = {
-                "agent_name": agent_name,
-                "profile_name": "default",
-                "is_active": True,
-                "system_prompt": system_prompt,
-                "tool_config": tool_config,
-                "version": 1,
-                "created_at": now,
-                "updated_at": now,
-                "metadata": {
-                    "description": f"Default profile seeded from {filename}",
-                    "author": "system",
-                },
-            }
-
-            self.collection.insert_one(doc)
-            logger.info(f"  Seeded: {agent_name} ({len(system_prompt)} chars)")
-
-        logger.info(f"Seeded {len(PROMPT_FILES)} agent profiles")
+        if seeded:
+            logger.info(f"Seeded {len(seeded)} agent profile(s): {seeded}")
+        else:
+            logger.info("All agent profiles already present — nothing to seed")
 
     def sync_from_files(self) -> dict[str, str]:
-        """Update all active profiles' system_prompt from the .md files on disk.
+        """Update each active profile's system_prompt from the .md files on disk.
 
+        Agents that have no active profile yet (e.g. one added since the last
+        seed, or a rename) are seeded from their file instead of skipped.
         Uses update_one by _id (bypasses QE equality query limitations on find).
         Returns {agent_name: status} summary.
         """
@@ -126,7 +136,10 @@ class AgentProfileService:
                 {"agent_name": agent_name, "is_active": True}
             )
             if not active:
-                results[agent_name] = "no_active_profile"
+                # New agent (e.g. after a rename) — seed it rather than skip,
+                # so /reload can introduce agents added since the last seed.
+                chars = self._seed_one(agent_name, filename)
+                results[agent_name] = f"seeded ({chars} chars)"
                 continue
 
             current_version = active.get("version", 0)

@@ -1,4 +1,4 @@
-"""Tools for the internal data agent — provides user context for MongoDB queries."""
+"""Tools for the financial advice agent — provides user context for MongoDB queries."""
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
