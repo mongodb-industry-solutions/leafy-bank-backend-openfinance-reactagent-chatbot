@@ -32,22 +32,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _derive_flow_context(state_values: dict, response_text: str, messages: list) -> str:
-    """Derive the suggestion flow context from graph state, response text, and message history."""
-    active_consents = state_values.get("active_consents", [])
-
-    # No active consents — likely in consent flow
-    if not active_consents:
-        return "consent_flow"
-
-    # Active consent → financial advice flow (spending/position analysis)
-    purposes = [c.get("purpose", "") for c in active_consents]
-    if any((p or "").upper() == "FINANCIAL_ADVICE" for p in purposes):
-        return "financial_advice"
-
-    return "general"
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage resources: MCP server, checkpointer, and agent graph."""
@@ -209,8 +193,9 @@ async def chat(request: ChatRequest, fastapi_request: Request):
 
     suggestions = None
     if response_text and not interrupt_data:
-        flow_context = _derive_flow_context(state_values, response_text, messages)
-        suggestions = await generate_suggestions(messages, response_text, flow_context)
+        suggestions = await generate_suggestions(
+            messages, response_text, state_values.get("active_consents")
+        )
 
     return ChatResponse(
         thread_id=thread_id,
@@ -243,8 +228,9 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
 
     suggestions = None
     if response_text and not interrupt_data:
-        flow_context = _derive_flow_context(state_values, response_text, messages)
-        suggestions = await generate_suggestions(messages, response_text, flow_context)
+        suggestions = await generate_suggestions(
+            messages, response_text, state_values.get("active_consents")
+        )
 
     return ChatResponse(
         thread_id=request.thread_id,
@@ -299,8 +285,9 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 yield sse_event("response", {"text": response_text})
                 yield sse_event("done", {})
                 # Suggestions arrive after done — UI is already unblocked
-                flow_context = _derive_flow_context(state_values, response_text, messages)
-                suggestions = await generate_suggestions(messages, response_text, flow_context)
+                suggestions = await generate_suggestions(
+                    messages, response_text, state_values.get("active_consents")
+                )
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
             else:
@@ -362,8 +349,9 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 yield sse_event("response", {"text": response_text})
                 yield sse_event("done", {})
                 # Suggestions arrive after done — UI is already unblocked
-                flow_context = _derive_flow_context(state_values, response_text, messages)
-                suggestions = await generate_suggestions(messages, response_text, flow_context)
+                suggestions = await generate_suggestions(
+                    messages, response_text, state_values.get("active_consents")
+                )
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
             else:

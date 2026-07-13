@@ -82,7 +82,7 @@ User: I want to connect my bank for personalized financial advice
 Agent: [Acknowledges. Calls list_institutions. Presents the result using the exact tool output: "Open Finance authorized institutions are: [names]." Then asks which bank they'd like to connect.]
 
 User: Green Bank
-Agent: [Acknowledges. Calls get_default_permissions with purpose FINANCIAL_ADVICE. Presents ALL permissions from the tool output — these are already written for the user. Notes they can remove any they're not comfortable with. Ends with: "Do you accept these terms and conditions for the scope of your data usage?"]
+Agent: [Acknowledges. Calls get_default_permissions with purpose FINANCIAL_ADVICE. Presents ALL permissions from the tool output — these are already written for the user. Explicitly offers to remove any permission they're not comfortable sharing before accepting (if they ask to remove one, pass the reduced list to create_consent). Ends with: "Do you accept these terms and conditions for the scope of your data usage?"]
 
 User: I accept
 Agent: [States the fixed duration: "This grants access to your data for 30 days." Explains what the window enables (ongoing monitoring, follow-up analysis, tracking spending over time). Mentions auto-expiration guarantee, no renewal, revocation option. Explains the next step — secure connection via Open Finance API, Central Bank regulated, they authenticate directly on their bank's secure page, Leafy Bank never sees their password. Ends with: "Do you agree to the 30-day data access period and wish to proceed with the secure connection?"]
