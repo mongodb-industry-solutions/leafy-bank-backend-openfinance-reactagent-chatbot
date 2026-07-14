@@ -20,6 +20,11 @@ ALL_PERMISSIONS = [
     "TRANSACTIONS_READ",
 ]
 
+# Foundational permission. In Open Finance, balances, transactions, and products
+# all belong to an account — they cannot be shared without account info. So
+# ACCOUNTS_READ is mandatory on every consent and can never be removed.
+MANDATORY_PERMISSION = "ACCOUNTS_READ"
+
 # Default permissions per consent purpose
 PURPOSE_PERMISSIONS = {
     "FINANCIAL_ADVICE": [
@@ -103,6 +108,16 @@ async def create_consent(
         permissions: List of approved permissions (e.g. ["LOANS_READ", "ACCOUNTS_READ"])
         purpose: Consent purpose. Currently only FINANCIAL_ADVICE is supported. Omit for general access (all permissions).
     """
+    # ACCOUNTS_READ is foundational — balances, transactions, and products all
+    # belong to an account and can't be shared without it. Silently re-inject it
+    # if the reduced list dropped it, so an invalid consent can never be created.
+    if MANDATORY_PERMISSION not in permissions:
+        logger.info(
+            "Re-injecting mandatory %s into consent permissions (was: %s)",
+            MANDATORY_PERMISSION, permissions,
+        )
+        permissions = [MANDATORY_PERMISSION, *permissions]
+
     user_id = config["configurable"]["user_id"]
     # Scope duplicate detection to this conversation (browser session) so a new
     # session can create its own consent for a bank without colliding with an
