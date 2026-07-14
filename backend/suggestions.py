@@ -87,6 +87,22 @@ _FINANCIAL_ADVICE_SUGGESTIONS = [
 
 # Permissions just shown → user can accept, trim scope, or decline.
 _CONSENT_REVIEW_SUGGESTIONS = ["I accept", "Remove permissions", "I decline"]
+
+# "Remove permissions" clarifying step: the agent lists current permissions and
+# asks which to remove — a tool-less prose turn, so it isn't caught by the
+# consent-tool branches. Offer a remove chip per REMOVABLE permission. Account
+# info (ACCOUNTS_READ) is foundational and mandatory, so it is never offered.
+_REMOVE_PROMPT_PHRASES = (
+    "would you like to remove",
+    "which one",  # "Which one(s) would you like to remove?"
+)
+# Friendly permission name (as printed to the user) → remove chip.
+_REMOVABLE_PERMISSION_CHIPS = {
+    "balances": "Remove Balances",
+    "transaction history": "Remove Transaction history",
+    "loans & credit products": "Remove Loans & credit products",
+    "product details": "Remove Loans & credit products",
+}
 # Duration/proceed step (no tool call) → accept or decline.
 _CONSENT_ACCEPT_SUGGESTIONS = ["I accept", "I decline"]
 
@@ -167,6 +183,23 @@ def _connect_chips(institutions: list[str], connected: list[str]) -> list[str]:
 def _has_accept_decline_prompt(response_text: str) -> bool:
     lower = response_text.lower()
     return any(phrase in lower for phrase in _ACCEPT_DECLINE_PHRASES)
+
+
+def _remove_permission_chips(response_text: str) -> list[str]:
+    """Chips for the "which permission to remove?" step.
+
+    Returns a `Remove <permission>` chip for each removable permission the
+    agent listed in its response, or [] if this isn't a remove-scope prompt.
+    Account info is mandatory, so it never appears here.
+    """
+    lower = response_text.lower()
+    if not any(phrase in lower for phrase in _REMOVE_PROMPT_PHRASES):
+        return []
+    chips: list[str] = []
+    for name, chip in _REMOVABLE_PERMISSION_CHIPS.items():
+        if name in lower and chip not in chips:
+            chips.append(chip)
+    return chips[:3]
 
 
 def _recommended_banks(
@@ -299,6 +332,14 @@ async def generate_suggestions(
     # Duration/proceed acceptance step carries no tool call.
     if _has_accept_decline_prompt(response_text):
         return list(_CONSENT_ACCEPT_SUGGESTIONS)
+
+    # "Which permission would you like to remove?" step (no tool call). Must be
+    # checked before the financial-advice fallback below, which otherwise
+    # hijacks this consent question with advice chips when a prior
+    # FINANCIAL_ADVICE consent exists.
+    remove_chips = _remove_permission_chips(response_text)
+    if remove_chips:
+        return remove_chips
 
     # Post-connect: agent recommends connecting other named banks.
     recommended = _recommended_banks(response_text, institutions, connected)
