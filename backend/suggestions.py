@@ -10,6 +10,7 @@ to prevent dead-end chips and ensure contextual relevance.
 """
 
 import logging
+import re
 
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -74,6 +75,120 @@ _FINANCIAL_ADVICE_SUGGESTIONS = [
     "How much did I spend dining out?",
 ]
 
+# --- Deterministic consent/connect chips ---------------------------------
+#
+# Suggestion chips are click-to-send text: a chip labelled "I accept" sends
+# "I accept" as the user's next message. For the consent/connect flow the
+# valid next actions are FIXED per step, so we bypass the LLM entirely and
+# emit them deterministically. This is keyed off the last CONSENT TOOL the
+# agent invoked in the current turn (a reliable signal) rather than prose
+# matching, which is fragile (see defects.md 2026-03-31). Two tool-less
+# steps fall back to narrow, constrained prose checks.
+
+# Permissions just shown → user can accept, trim scope, or decline.
+_CONSENT_REVIEW_SUGGESTIONS = ["I accept", "Remove permissions", "I decline"]
+# Duration/proceed step (no tool call) → accept or decline.
+_CONSENT_ACCEPT_SUGGESTIONS = ["I accept", "I decline"]
+
+# Consent tools we key step detection on.
+_CONSENT_TOOLS = {
+    "list_institutions",
+    "get_default_permissions",
+    "create_consent",
+    "approve_consent",
+    "request_bank_login",
+    "fetch_and_cache_data",
+    "list_user_consents",
+    "revoke_consent",
+    "get_consent",
+}
+
+# Exact prefix emitted by the list_institutions tool.
+_INSTITUTIONS_PREFIX = "Open Finance authorized institutions are:"
+
+# Accept/decline prompt markers. consent.md mandates every consent-step
+# response end with an accept/decline prompt, so these are reliable for the
+# one step that carries no tool call (duration/proceed acceptance).
+_ACCEPT_DECLINE_PHRASES = (
+    "do you accept",
+    "do you agree",
+    "accept these terms",
+    "accept these permissions",
+    "wish to proceed",
+    "like to proceed",
+    "ready to proceed",
+    "proceed with the secure connection",
+    "proceed with the connection",
+)
+
+
+def _find_last_consent_tool(messages: list) -> str | None:
+    """Name of the most recent consent-tool call in the CURRENT turn.
+
+    Scans backward and stops at the previous human message so only the
+    agent's latest turn is considered. Returns None if the turn invoked no
+    consent tool.
+    """
+    for msg in reversed(messages):
+        mtype = getattr(msg, "type", None)
+        if mtype == "human":
+            break
+        if mtype == "tool" and getattr(msg, "name", None) in _CONSENT_TOOLS:
+            return msg.name
+    return None
+
+
+def _extract_institutions(messages: list) -> list[str]:
+    """Parse bank names from the most recent list_institutions tool output.
+
+    The names come from the tool's own output (not guessed), so the chip
+    vocabulary is deterministic.
+    """
+    for msg in reversed(messages):
+        if getattr(msg, "type", None) == "tool" and getattr(msg, "name", None) == "list_institutions":
+            content = msg.content if isinstance(msg.content, str) else ""
+            if _INSTITUTIONS_PREFIX in content:
+                tail = content.split(_INSTITUTIONS_PREFIX, 1)[1]
+                return [n.strip(" .") for n in tail.split(",") if n.strip(" .")]
+            return []
+    return []
+
+
+def _connect_chips(institutions: list[str], connected: list[str]) -> list[str]:
+    """`Connect to <Bank>` chips for banks not yet connected this session."""
+    connected_lower = {c.lower() for c in connected}
+    return [
+        f"Connect to {name}"
+        for name in institutions
+        if name.lower() not in connected_lower
+    ][:3]
+
+
+def _has_accept_decline_prompt(response_text: str) -> bool:
+    lower = response_text.lower()
+    return any(phrase in lower for phrase in _ACCEPT_DECLINE_PHRASES)
+
+
+def _recommended_banks(
+    response_text: str, institutions: list[str], connected: list[str]
+) -> list[str]:
+    """Banks the agent recommends connecting to in a tool-less prose turn.
+
+    Constrained to the known institution vocabulary and requires the word
+    "connect" in the response to avoid matching incidental bank mentions.
+    """
+    lower = response_text.lower()
+    # Match "connect" as a whole word only — avoid "connection"/"connected"
+    # which appear in the proceed/confirmation copy and would false-positive.
+    if not institutions or not re.search(r"\bconnect\b", lower):
+        return []
+    connected_lower = {c.lower() for c in connected}
+    return [
+        name
+        for name in institutions
+        if name.lower() in lower and name.lower() not in connected_lower
+    ]
+
 
 def _build_suggestions_prompt(flow_context: str) -> str:
     """Build a flow-state-aware system prompt for suggestion generation."""
@@ -132,25 +247,72 @@ def _get_recent_conversation(messages: list, limit: int = 4) -> list:
 async def generate_suggestions(
     messages: list,
     response_text: str,
-    flow_context: str = "general",
+    active_consents: list | None = None,
 ) -> list[str]:
-    """Generate 2-3 contextual reply suggestions based on conversation history.
+    """Resolve reply-suggestion chips for the latest assistant turn.
 
-    Uses a lightweight Haiku model for speed. On any failure, returns an
-    empty list — suggestions are non-critical and must never block the
-    main response.
+    Deterministic-first: consent/connect steps have a FIXED set of valid
+    next actions, so those chips are emitted directly (LLM bypassed), keyed
+    off the last consent tool the agent invoked. Only genuinely open turns
+    fall through to the Haiku LLM. On any LLM failure, returns an empty list
+    — suggestions are non-critical and must never block the main response.
 
     Args:
         messages: Full conversation message history.
         response_text: The assistant's latest response text.
-        flow_context: Current flow state for suggestion constraint rules.
-            One of: consent_flow, financial_advice, general.
+        active_consents: Consents created this session (from graph state),
+            used to filter already-connected banks and detect the
+            financial-advice flow.
     """
-    # Post-consent financial-advice flow is deterministic — return the fixed
-    # chip set and never call the LLM, so no new suggestions can appear.
-    if flow_context == "financial_advice":
+    active_consents = active_consents or []
+    connected = [c.get("institution", "") for c in active_consents]
+    institutions = _extract_institutions(messages)
+    last_tool = _find_last_consent_tool(messages)
+
+    # Interrupt-driving tools run their own dedicated UI (approval modal,
+    # bank-login tab) — chips would compete with it.
+    if last_tool in {"approve_consent", "request_bank_login"}:
+        return []
+
+    # Bank list just presented → offer connect chips for unconnected banks.
+    if last_tool == "list_institutions":
+        chips = _connect_chips(institutions, connected)
+        if chips:
+            return chips
+
+    # Permissions just presented → accept / remove-scope / decline.
+    if last_tool == "get_default_permissions":
+        return list(_CONSENT_REVIEW_SUGGESTIONS)
+
+    # Data cached (connection complete) → financial-advice actions, plus a
+    # generic "connect another bank" option when one is still available. The
+    # chip routes back through list_institutions so the user picks from the
+    # remaining banks rather than being steered to a specific one.
+    if last_tool == "fetch_and_cache_data":
+        chips = list(_FINANCIAL_ADVICE_SUGGESTIONS)
+        if _connect_chips(institutions, connected):
+            chips.append("Connect another bank")
+        return chips
+
+    # --- prose fallbacks for tool-less consent turns ---
+
+    # Duration/proceed acceptance step carries no tool call.
+    if _has_accept_decline_prompt(response_text):
+        return list(_CONSENT_ACCEPT_SUGGESTIONS)
+
+    # Post-connect: agent recommends connecting other named banks.
+    recommended = _recommended_banks(response_text, institutions, connected)
+    if recommended:
+        return [f"Connect to {b}" for b in recommended][:3]
+
+    # Ongoing financial-advice turns (consent already granted, no consent
+    # step in progress) keep the fixed advice chips.
+    purposes = [(c.get("purpose") or "").upper() for c in active_consents]
+    if "FINANCIAL_ADVICE" in purposes:
         return list(_FINANCIAL_ADVICE_SUGGESTIONS)
 
+    # --- non-deterministic fallback: Haiku LLM ---
+    flow_context = "consent_flow" if not active_consents else "general"
     try:
         context = _get_recent_conversation(messages)
 
