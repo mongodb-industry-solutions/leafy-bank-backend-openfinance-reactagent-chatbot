@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,55 +32,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _derive_flow_context(state_values: dict, response_text: str, messages: list) -> str:
-    """Derive the suggestion flow context from graph state, response text, and message history."""
-    lower = response_text.lower()
-
-    # Portability acceptance confirmation was just sent
-    acceptance_phrases = [
-        "portability request has been submitted",
-        "portability offer has been accepted",
-        "processing your application",
-        "your savings timeline",
-        "thank you for choosing leafy bank",
-    ]
-    if any(phrase in lower for phrase in acceptance_phrases):
-        return "portability_accepted"
-
-    # Portability offer was just presented (contains actual rate/savings numbers)
-    # These phrases only appear in the offer itself, not in "Would you like to analyze..."
-    offer_phrases = ["qualified rate", "total savings over", "monthly savings",
-                     "rate improvement", "would you like to accept this"]
-    if any(phrase in lower for phrase in offer_phrases):
-        return "portability_offer_presented"
-
-    # Check if an offer was presented EARLIER in the conversation — if so,
-    # follow-up Q&A should still show Accept/Decline chips, not "Analyze"
-    for msg in reversed(messages):
-        if hasattr(msg, "type") and msg.type == "ai" and isinstance(msg.content, str):
-            msg_lower = msg.content.lower()
-            # Stop scanning if we hit the acceptance confirmation (past that point)
-            if any(phrase in msg_lower for phrase in acceptance_phrases):
-                break
-            if any(phrase in msg_lower for phrase in offer_phrases):
-                return "portability_offer_presented"
-
-    active_consents = state_values.get("active_consents", [])
-
-    # No active consents — likely in consent flow
-    if not active_consents:
-        return "consent_flow"
-
-    # Distinguish portability vs financial advice by consent purpose
-    purposes = [c.get("purpose", "") for c in active_consents]
-    if any("PORTABILITY" in (p or "").upper() for p in purposes):
-        return "portability_analysis"
-    if any((p or "").upper() == "FINANCIAL_ADVICE" for p in purposes):
-        return "financial_advice"
-
-    return "general"
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage resources: MCP server, checkpointer, and agent graph."""
@@ -93,11 +45,20 @@ async def lifespan(app: FastAPI):
         "disconnect", "explain", "export", "list-databases", "mongodb-logs",
         "rename-collection", "switch-connection",
     ])
+    # Prefer the pinned binary pre-installed in the image (see Dockerfile.backend)
+    # for a deterministic, offline boot; fall back to a pinned npx for local dev
+    # where it isn't installed globally. Never use a floating @latest.
+    MCP_SERVER_VERSION = "1.13.0"
+    if shutil.which("mongodb-mcp-server"):
+        mcp_command, mcp_args = "mongodb-mcp-server", []
+    else:
+        mcp_command = "npx"
+        mcp_args = ["-y", f"mongodb-mcp-server@{MCP_SERVER_VERSION}"]
     mcp_client = MultiServerMCPClient(
         {
             "mongodb": {
-                "command": "npx",
-                "args": ["-y", "mongodb-mcp-server@latest"],
+                "command": mcp_command,
+                "args": mcp_args,
                 "transport": "stdio",
                 "env": {
                     **os.environ,
@@ -126,14 +87,26 @@ async def lifespan(app: FastAPI):
         # Only expose read/query tools to the agent
         allowed_tools = {"find", "aggregate", "count", "list-collections", "collection-schema"}
         mcp_tools = [t for t in all_mcp_tools if t.name in allowed_tools]
-        logger.info(f"{len(mcp_tools)} MCP tools passed to internal data agent")
+        logger.info(f"{len(mcp_tools)} MCP tools passed to financial advice agent")
 
-        checkpointer = get_checkpointer()
-        app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
-        app.state.mcp_client = mcp_client
-        app.state.mcp_tools = mcp_tools
-        app.state.profile_service = profile_service
-        logger.info("Multi-agent graph initialized")
+        # Surface the real startup error here. Any exception raised inside this
+        # still-open MCP session unwinds through the stdio teardown, which raises
+        # anyio.BrokenResourceError and masks the original (see defects.md
+        # 2026-03-26). Log the true cause before re-raising.
+        try:
+            checkpointer = get_checkpointer()
+            app.state.agent = build_graph(checkpointer, mcp_tools=mcp_tools)
+            app.state.mcp_client = mcp_client
+            app.state.mcp_tools = mcp_tools
+            app.state.profile_service = profile_service
+            logger.info("Multi-agent graph initialized")
+        except Exception:
+            logger.exception(
+                "Chatbot startup failed during checkpointer/graph init "
+                "(real cause surfaced before MCP session teardown masks it as "
+                "BrokenResourceError)"
+            )
+            raise
 
         yield
 
@@ -220,8 +193,9 @@ async def chat(request: ChatRequest, fastapi_request: Request):
 
     suggestions = None
     if response_text and not interrupt_data:
-        flow_context = _derive_flow_context(state_values, response_text, messages)
-        suggestions = await generate_suggestions(messages, response_text, flow_context)
+        suggestions = await generate_suggestions(
+            messages, response_text, state_values.get("active_consents")
+        )
 
     return ChatResponse(
         thread_id=thread_id,
@@ -254,8 +228,9 @@ async def chat_resume(request: ResumeRequest, fastapi_request: Request):
 
     suggestions = None
     if response_text and not interrupt_data:
-        flow_context = _derive_flow_context(state_values, response_text, messages)
-        suggestions = await generate_suggestions(messages, response_text, flow_context)
+        suggestions = await generate_suggestions(
+            messages, response_text, state_values.get("active_consents")
+        )
 
     return ChatResponse(
         thread_id=request.thread_id,
@@ -310,8 +285,9 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 yield sse_event("response", {"text": response_text})
                 yield sse_event("done", {})
                 # Suggestions arrive after done — UI is already unblocked
-                flow_context = _derive_flow_context(state_values, response_text, messages)
-                suggestions = await generate_suggestions(messages, response_text, flow_context)
+                suggestions = await generate_suggestions(
+                    messages, response_text, state_values.get("active_consents")
+                )
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
             else:
@@ -373,8 +349,9 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 yield sse_event("response", {"text": response_text})
                 yield sse_event("done", {})
                 # Suggestions arrive after done — UI is already unblocked
-                flow_context = _derive_flow_context(state_values, response_text, messages)
-                suggestions = await generate_suggestions(messages, response_text, flow_context)
+                suggestions = await generate_suggestions(
+                    messages, response_text, state_values.get("active_consents")
+                )
                 if suggestions:
                     yield sse_event("suggestions", {"items": suggestions})
             else:

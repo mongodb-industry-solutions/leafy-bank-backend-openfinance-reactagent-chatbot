@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 # Human-readable agent names
 _AGENT_DISPLAY_NAMES = {
     "consent_agent": "Consent Agent",
-    "portability_agent": "Portability Agent",
-    "internal_data_agent": "Internal Data Agent",
+    "financial_advice_agent": "Financial Advice Agent",
 }
 
 # MongoDB feature used by each tool
@@ -26,17 +25,9 @@ _TOOL_MONGODB_FEATURES = {
     "list_user_consents": "Queryable Encryption",
     "approve_consent": "Queryable Encryption",
     "revoke_consent": "Queryable Encryption",
-    # Analysis tools
-    "calculate_financial_position": "Aggregation Pipeline",
-    "fetch_internal_accounts": "Aggregation Pipeline",
-    "evaluate_portability_offer": "Aggregation Pipeline",
-    "fetch_credit_score": "Document Query",
-    "fetch_customer_identification": "Queryable Encryption",
     # Consent agent — simple queries
     "list_institutions": "Document Query",
     "verify_consent_data": "Consent-Gated Query",
-    # Portability agent
-    "find_user": "Document Query",
     # MCP tools
     "aggregate": "Aggregation Pipeline",
     "find": "Document Query",
@@ -64,7 +55,7 @@ def process_stream_event(event: tuple) -> list[str]:
     namespace_tuple:
         () = parent graph
         ("consent_agent:xxx",) = inside consent_agent sub-graph
-        ("portability_agent:xxx",) = inside portability_agent sub-graph
+        ("financial_advice_agent:xxx",) = inside financial_advice_agent sub-graph
     """
     if not isinstance(event, tuple):
         logger.debug("Skipping non-tuple event: %s", type(event))
@@ -152,7 +143,7 @@ def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]
         # Inside a sub-agent: tool execution completed
         results.extend(_handle_tools_update(update, agent_name))
 
-    elif node_name in ("consent_agent", "portability_agent", "internal_data_agent"):
+    elif node_name in ("consent_agent", "financial_advice_agent"):
         # Parent-level: sub-agent finished
         results.append(sse_event("agent_complete", {
             "agent": node_name,

@@ -1,6 +1,13 @@
 # Staging environment configuration for openfinance-chatbot
 # Deployed via: push to 'staging' branch
 
+security:
+  dataClassification: "Internal"
+  dataDesignation: ["MI"]
+
+ownership:
+  driEmail: "kiran.tulsulkar@mongodb.com"
+
 # Non-sensitive environment variables (injected directly)
 env:
   NODE_ENV: staging
@@ -8,8 +15,8 @@ env:
   AWS_REGION: us-east-1
   CHAT_COMPLETIONS_MODEL_ID: us.anthropic.claude-sonnet-4-6
   SUPERVISOR_MODEL_ID: us.anthropic.claude-haiku-4-5-20251001-v1:0
-  CHECKPOINTS_AIO_COLLECTION: checkpoints_aio
-  CHECKPOINTS_WRITES_AIO_COLLECTION: checkpoint_writes_aio
+  CHECKPOINTS_AIO_COLLECTION: openFinanceCheckpoints
+  CHECKPOINTS_WRITES_AIO_COLLECTION: openFinanceCheckpointWrites
   # Internal K8s service URL for the Open Finance backend
   # Format: http://<release-name>-web-app:80
   OPEN_FINANCE_API_URL: http://open-finance-next-gen-web-app:80
@@ -35,7 +42,7 @@ serviceAccount:
 extraVolumes:
   - name: encryption-config
     configMap:
-      name: chatbot-encryption-config
+      name: openfinance-chatbot-encryption-config
 
 extraVolumeMounts:
   - name: encryption-config

@@ -1,4 +1,4 @@
-"""Internal data agent — answers user questions about their Leafy Bank data via MongoDB MCP."""
+"""Financial advice agent — answers user questions about their Leafy Bank data via MongoDB MCP."""
 
 import logging
 
@@ -6,13 +6,13 @@ from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 
 from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
-from agent.tools.internal_tools import get_current_user_id
+from agent.tools.financial_advice_tools import get_current_user_id
 
 logger = logging.getLogger(__name__)
 
 
-def create_internal_data_agent(system_prompt: str, mcp_tools: list):
-    """Build and return the internal data agent with MongoDB MCP tools.
+def create_financial_advice_agent(system_prompt: str, mcp_tools: list):
+    """Build and return the financial advice agent with MongoDB MCP tools.
 
     Args:
         system_prompt: The agent's system prompt, loaded from encrypted MongoDB.
@@ -30,8 +30,8 @@ def create_internal_data_agent(system_prompt: str, mcp_tools: list):
         model=llm,
         tools=tools,
         system_prompt=system_prompt,
-        name="internal_data_agent",
+        name="financial_advice_agent",
     )
 
-    logger.info("Internal data agent created successfully")
+    logger.info("Financial advice agent created successfully")
     return agent
