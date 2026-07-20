@@ -1,23 +1,22 @@
 # Leafy Bank Open Finance — Agentic Chatbot
 
-Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational Open Finance consent management, loan portability analysis, and personalized financial advice — all through a multi-agent chatbot powered by LangGraph.
+Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational Open Finance consent management and personalized financial advice — all through a multi-agent chatbot powered by LangGraph.
 
 > **This is one of three interconnected repositories that make up the Leafy Bank Open Finance solution:**
 >
 > | Repository | Description | Port |
 > |------------|-------------|------|
 > | [open-finance-next-gen](https://github.com/mongodb-industry-solutions/open-finance-next-gen) | FastAPI backend — consents, accounts, transactions, Queryable Encryption | 8003 |
-> | **leafy-bank-backend-openfinance-reactagent-chatbot** (this repo) | LangGraph multi-agent chatbot — consent flows, portability analysis, financial advice | 8080 |
+> | **leafy-bank-backend-openfinance-reactagent-chatbot** (this repo) | LangGraph multi-agent chatbot — consent flows, financial advice | 8080 |
 > | [open-finance-next-gen-ui](https://github.com/mongodb-industry-solutions/open-finance-next-gen-ui) | Next.js 15 frontend — dashboard, multi-bank views, AI assistant | 3000 |
 
 ## Where MongoDB Shines
 
 - **Conversation Persistence**: MongoDB's document model stores full LangGraph checkpoint state — messages, tool call history, interrupt payloads, and active consents — as a single document per conversation turn. Resume any conversation exactly where it left off, across sessions.
-- **Atlas Vector Search for Transaction Classification**: The Portability Agent uses Atlas Vector Search to semantically classify spending transactions (e.g., "Uber ride" maps to `TRANSPORTATION`), built into Atlas without a separate vector database.
-- **MCP Server for Ad-Hoc Queries**: The Financial Advice Agent connects to MongoDB via the official MCP server, enabling natural language queries against Leafy Bank's internal data — accounts, transactions, products, credit scores — without custom tool code for each collection.
+- **MCP Server for Ad-Hoc Queries**: The Financial Advice Agent connects to MongoDB via the official MCP server, enabling natural language queries against Leafy Bank's internal data — accounts, transactions, and cached external-bank data — without custom tool code for each collection.
 - **Queryable Encryption for Consent Privacy**: The Consent Agent creates and queries consents stored with Queryable Encryption in the Open Finance backend. Sensitive fields (consumer identity, permissions, source institution) are encrypted at rest — the Atlas server never sees plaintext, and equality queries on encrypted fields enable consent lookups without decryption server-side.
 - **Queryable Encryption for Agent Profiles**: Agent system prompts and tool configurations are stored in MongoDB with Queryable Encryption — the `agent_name` field supports equality queries on ciphertext, while `system_prompt` and `tool_config` are encrypted at rest. Even with full database access, an attacker cannot read or tamper with the instructions governing agent behavior.
-- **Flexible Document Model**: Consent records, external bank data, and underwriting rules all have different shapes. MongoDB stores them naturally without schema conflicts, and the agent reads whatever structure each API returns.
+- **Flexible Document Model**: Consent records and cached external-bank data all have different shapes. MongoDB stores them naturally without schema conflicts, and the agent reads whatever structure each API returns.
 
 ## High-Level Architecture
 
@@ -31,22 +30,21 @@ Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational O
 ```text
 User Request → Supervisor (Router)
                     │
-          ┌─────────┼──────────────┐
-          ▼         ▼              ▼
-      Consent    Portability   Financial Advice
-       Agent       Agent          Agent
-       (9 tools)   (7 tools)     (MongoDB MCP)
-          │         │              │
-          ▼         ▼              ▼
-    Open Finance  Open Finance   MongoDB Atlas
-     REST API     REST API       (Leafy Bank DB)
+          ┌─────────┴──────────────┐
+          ▼                        ▼
+      Consent               Financial Advice
+       Agent                     Agent
+       (9 tools)               (MongoDB MCP)
+          │                        │
+          ▼                        ▼
+    Open Finance             MongoDB Atlas
+     REST API                (Leafy Bank DB)
 ```
 
 A **Supervisor Agent** reads the conversation and routes each request to the right specialist:
 
-- **Consent Agent** — Guides users through secure data-sharing consent with external banks using a 4-pillar framework (Scope, Purpose, Source, Duration). Handles institution selection, consent creation, bank login, explicit user approval, and revocation.
-- **Portability Agent** — Analyzes external bank data to produce spending scores, credit assessments, and deterministic loan portability offers. Compares current loan terms against Leafy Bank's rates to show potential savings.
-- **Financial Advice Agent** — Answers ad-hoc questions about the user's Leafy Bank accounts, transactions, and products by querying MongoDB directly through the MCP server.
+- **Consent Agent** — Guides users through secure data-sharing consent with external banks using a 4-pillar framework (Scope, Purpose, Source, Duration). Handles institution selection, consent creation, bank login, explicit user approval, revocation, and caching of shared data.
+- **Financial Advice Agent** — Answers ad-hoc questions about the user's Leafy Bank accounts, transactions, and cached external-bank data by querying MongoDB directly through the MCP server.
 
 ## Human-in-the-Loop
 
@@ -61,13 +59,11 @@ The chatbot uses LangGraph's `interrupt()` to pause the workflow at two critical
 ## Tech Stack
 
 - **[MongoDB Atlas](https://www.mongodb.com/atlas)** for conversation checkpointing and internal bank data
-- **[MongoDB Atlas Vector Search](https://www.mongodb.com/docs/atlas/atlas-vector-search/)** for semantic transaction classification
 - **[MongoDB MCP Server](https://github.com/mongodb-labs/mongodb-mcp-server)** for natural language queries against internal collections
 - **[LangGraph](https://langchain-ai.github.io/langgraph/)** for multi-agent orchestration with supervisor pattern
 - **[LangChain](https://python.langchain.com/)** for agent tooling and abstractions
 - **[MongoDB Queryable Encryption](https://www.mongodb.com/docs/manual/core/queryable-encryption/)** for encrypted agent profile storage
 - **[AWS Bedrock](https://aws.amazon.com/bedrock/)** — Claude Sonnet 4.6 for agents, Claude Haiku 4.5 for supervisor routing and suggestion generation
-- **[Voyage AI](https://www.voyageai.com/)** for embedding generation used by Atlas Vector Search
 - **[FastAPI](https://fastapi.tiangolo.com/)** (Python) for the REST API backend
 - **[Poetry](https://python-poetry.org/)** for Python dependency management
 
@@ -80,7 +76,6 @@ Before you begin, ensure you have met the following requirements:
 - **Node.js** 20 or higher (required for MongoDB MCP server via `npx`)
 - **MongoDB Atlas** cluster
 - **AWS credentials** with Bedrock access (for Claude Sonnet)
-- **Voyage AI API key** for embedding generation (get one at [Voyage AI's dashboard](https://dash.voyageai.com/api-keys))
 - **Open Finance Backend API** running locally — this is the `open-finance-next-gen` repo, must be running on port 8003
 - **Docker & Docker Compose** (optional, for containerized deployment)
 
@@ -127,7 +122,7 @@ Before you begin, ensure you have met the following requirements:
 
 The chatbot depends on the Open Finance backend API for consent management, institution lookups, and external bank data. Clone and start the `open-finance-next-gen` repo on port 8003 before running the chatbot.
 
-> Without this service running, consent and portability tools will fail with connection errors.
+> Without this service running, the consent tools will fail with connection errors.
 
 ### Set Up Queryable Encryption
 
@@ -157,18 +152,16 @@ Agent profiles are stored with MongoDB Queryable Encryption. The setup requires 
 
 ### Populate Seed Data
 
-The Leafy Bank financial advice agent requires seed data in your Atlas cluster. Import the following collections into a database called `leafy_bank_test`:
+The Leafy Bank financial advice agent requires seed data in your Atlas cluster. Import the following collections into a database called `leafy_bank_bian`:
 
 | Collection | Purpose |
 | ---------- | ------- |
-| `accounts` | User account balances and types |
-| `transactions` | Transaction history (DEBIT/CREDIT) |
-| `users` | User profiles |
-| `products` | Leafy Bank product catalog (loans, credit cards) |
-| `credit_bureau_scores` | User credit scores |
-| `spending_best_practices` | MCC code ranges and category targets |
+| `customers` | Maps `userName` → BIAN `customerId` (query entry point) |
+| `accounts` | User account balances and types (keyed by `customerSnapshot.customerId`) |
+| `transactions` | Transaction history (INCOMING/OUTGOING), keyed by account |
+| `cachedExternalData` | External-bank data (accounts, products, transactions) cached from approved consents, keyed by `UserName` |
 
-> These collections are used by the Financial Advice Agent (MongoDB MCP) and the Portability Agent's spending analysis tools.
+> These collections are queried by the Financial Advice Agent through the MongoDB MCP server.
 
 ## Run it Locally
 
@@ -211,9 +204,6 @@ The Leafy Bank financial advice agent requires seed data in your Atlas cluster. 
 
    # MongoDB MCP Server (Leafy Bank internal data)
    LEAFY_BANK_MONGODB_URI=
-
-   # Vector Embeddings (transaction classification)
-   VOYAGE_API_KEY=
 
    # Queryable Encryption (agent profiles)
    KMS_PROVIDER=local
@@ -334,7 +324,7 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 | `progress` | Sub-step progress updates |
 | `agent_complete` | Agent finished its turn |
 | `response` | Final agent response text |
-| `suggestions` | Contextual reply suggestions (e.g., "Accept offer", bank names) |
+| `suggestions` | Contextual reply suggestions (e.g., "Approve consent", bank names) |
 | `interrupt` | Workflow paused for human input |
 | `error` | Error details |
 | `done` | Stream complete |
@@ -353,28 +343,15 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 | `request_bank_login` | Pause agent — user logs into external bank |
 | `approve_consent` | Pause agent — user explicitly approves consent |
 | `revoke_consent` | Revoke an active consent |
-| `verify_consent_data` | Probe external data after consent approval |
+| `fetch_and_cache_data` | Fetch external data after consent approval and cache it for the advice agent |
 
 **Consent Purposes:**
 
 | Purpose | Description |
 | ------- | ----------- |
-| `PERSONAL_LOAN_PORTABILITY` | Compare personal loan rates |
-| `PAYROLL_LOAN_PORTABILITY` | Compare payroll-deductible loan rates |
-| `VEHICLE_LOAN_PORTABILITY` | Compare vehicle loan rates |
-| `FINANCIAL_ADVICE` | General financial insights |
+| `FINANCIAL_ADVICE` | General financial insights over the user's shared data |
 
-### Portability Agent (7 Tools)
-
-| Tool | Purpose |
-| ---- | ------- |
-| `find_user` | Look up user by username, get MongoDB ObjectId |
-| `analyze_spending` | Classify transactions via vector search, produce spending score (0–100) |
-| `fetch_customer_identification` | Get identity verification from external bank |
-| `fetch_credit_score` | Fetch credit bureau score |
-| `evaluate_portability_offer` | Deterministic underwriting: score → tier → rate → payment → savings |
-| `fetch_internal_accounts` | Get Leafy Bank accounts |
-| `calculate_financial_position` | Concurrent fetch of total balance + total debt |
+> Omit the purpose (or pass `null`) for general access with all permissions.
 
 ### Financial Advice Agent (MongoDB MCP)
 
@@ -401,7 +378,7 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 ### Agent Errors
 
 - **Consent tools return auth errors** — The Open Finance backend may need a running user session. Check that the `user_id` in your request matches a registered user.
-- **Spending analysis returns empty results** — Ensure the `leafy_bank_test` database has seed data in the `transactions` and `spending_best_practices` collections.
+- **Financial advice returns empty results** — Ensure the `leafy_bank_bian` database has seed data and that the user has a `customers` record mapping `userName` → `customerId`.
 - **MongoDB MCP tools fail** — Node.js 20+ must be installed for `npx mongodb-mcp-server` to work.
 
 ## Core Capabilities
@@ -413,7 +390,7 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 
 The Supervisor reads the conversation history and `active_consents` state to decide which agent should handle each turn. Key behaviors:
 
-- **Automatic consent detection** — When a consent is newly approved, the Supervisor detects it from tool messages and tracks it in shared state, making it available for handoff to the Portability Agent.
+- **Automatic consent detection** — When a consent is newly approved, the Supervisor detects it from tool messages and tracks it in shared state, making the shared data available for handoff to the Financial Advice Agent.
 - **Deterministic guards** — Critical transitions (like post-approval routing) use deterministic logic, not LLM decisions, ensuring they always happen correctly.
 - **Goal-oriented prompts** — Each agent has a focused markdown prompt that defines its role, tools, and conversational guidelines.
 
@@ -425,19 +402,6 @@ Every consent is explained to the user via four pillars:
 2. **Purpose** — Why the data is needed and what benefit the user gets
 3. **Source** — Which external bank the data comes from
 4. **Duration** — How long access lasts (one-time or up to 30 days)
-
-### Loan Portability Analysis
-
-<!-- TODO: Add portability flow diagram -->
-![Portability Analysis Flow](placeholder-portability-flow.png)
-
-The Portability Agent runs a deterministic underwriting pipeline:
-
-1. **Spending Analysis** — Fetches all transactions (internal + external), classifies them via Atlas Vector Search, and produces a spending score (0–100) with category breakdowns.
-2. **Credit Assessment** — Fetches the user's credit bureau score.
-3. **Offer Evaluation** — Deterministic computation: spending score → tier matching → base rate × tier multiplier → amortization → monthly payment → savings vs. current loan.
-
-The result shows the user exactly how much they'd save by porting their loan to Leafy Bank.
 
 ### Streaming Architecture
 
@@ -455,7 +419,6 @@ The chatbot streams agent activity in real time via Server-Sent Events:
 
 - [MongoDB for Financial Services](https://www.mongodb.com/solutions/industries/financial-services)
 - [MongoDB Atlas](https://www.mongodb.com/atlas)
-- [MongoDB Atlas Vector Search](https://www.mongodb.com/docs/atlas/atlas-vector-search/)
 - [MongoDB MCP Server](https://github.com/mongodb-labs/mongodb-mcp-server)
 
 ### Frameworks and Services
@@ -463,6 +426,5 @@ The chatbot streams agent activity in real time via Server-Sent Events:
 - [LangGraph](https://langchain-ai.github.io/langgraph/) — Multi-agent orchestration with human-in-the-loop
 - [LangChain](https://python.langchain.com/) — Agent tooling and abstractions
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) — Managed LLM access (Anthropic Claude)
-- [Voyage AI](https://www.voyageai.com/) — Embedding generation for vector search
 - [FastAPI](https://fastapi.tiangolo.com/) — Python async API framework
 - [Poetry](https://python-poetry.org/) — Python dependency management
