@@ -4,11 +4,11 @@ Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational O
 
 > **This is one of three interconnected repositories that make up the Leafy Bank Open Finance solution:**
 >
-> | Repository | Description | Port |
-> |------------|-------------|------|
-> | [open-finance-next-gen](https://github.com/mongodb-industry-solutions/open-finance-next-gen) | FastAPI backend — consents, accounts, transactions, Queryable Encryption | 8003 |
-> | **leafy-bank-backend-openfinance-reactagent-chatbot** (this repo) | LangGraph multi-agent chatbot — consent flows, financial advice | 8080 |
-> | [open-finance-next-gen-ui](https://github.com/mongodb-industry-solutions/open-finance-next-gen-ui) | Next.js 15 frontend — dashboard, multi-bank views, AI assistant | 3000 |
+> | Repository                                                                                         | Description                                                              | Port |
+> | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---- |
+> | [open-finance-next-gen](https://github.com/mongodb-industry-solutions/open-finance-next-gen)       | FastAPI backend — consents, accounts, transactions, Queryable Encryption | 8003 |
+> | **leafy-bank-backend-openfinance-reactagent-chatbot** (this repo)                                  | LangGraph multi-agent chatbot — consent flows, financial advice          | 8080 |
+> | [open-finance-next-gen-ui](https://github.com/mongodb-industry-solutions/open-finance-next-gen-ui) | Next.js 15 frontend — dashboard, multi-bank views, AI assistant          | 3000 |
 
 ## Where MongoDB Shines
 
@@ -25,6 +25,7 @@ Demonstrates how Agentic AI combined with MongoDB Atlas enables conversational O
 ## Multi-Agent Workflow
 
 <!-- TODO: Add multi-agent workflow diagram -->
+
 ![Multi-Agent Workflow](placeholder-multi-agent-workflow.png)
 
 ```text
@@ -49,6 +50,7 @@ A **Supervisor Agent** reads the conversation and routes each request to the rig
 ## Human-in-the-Loop
 
 <!-- TODO: Add interrupt/resume flow diagram -->
+
 ![Interrupt Resume Flow](placeholder-interrupt-resume-flow.png)
 
 The chatbot uses LangGraph's `interrupt()` to pause the workflow at two critical points:
@@ -140,7 +142,7 @@ Agent profiles are stored with MongoDB Queryable Encryption. The setup requires 
    cd backend && poetry run python ../scripts/setup_encrypted_profiles.py
    ```
 
-   This creates the `openFinanceAgentProfiles` collection, generates DEKs, and saves `encryption_config.json` (gitignored).
+   This creates the `openbankingAgentProfiles` collection, generates DEKs, and saves `encryption_config.json` (gitignored).
 
 3. Agent prompts are seeded from `.md` files on first startup. To force a re-sync from files:
 
@@ -154,11 +156,11 @@ Agent profiles are stored with MongoDB Queryable Encryption. The setup requires 
 
 The Leafy Bank financial advice agent requires seed data in your Atlas cluster. Import the following collections into a database called `leafy_bank_bian`:
 
-| Collection | Purpose |
-| ---------- | ------- |
-| `customers` | Maps `userName` → BIAN `customerId` (query entry point) |
-| `accounts` | User account balances and types (keyed by `customerSnapshot.customerId`) |
-| `transactions` | Transaction history (INCOMING/OUTGOING), keyed by account |
+| Collection           | Purpose                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `customers`          | Maps `userName` → BIAN `customerId` (query entry point)                                                  |
+| `accounts`           | User account balances and types (keyed by `customerSnapshot.customerId`)                                 |
+| `transactions`       | Transaction history (INCOMING/OUTGOING), keyed by account                                                |
 | `cachedExternalData` | External-bank data (accounts, products, transactions) cached from approved consents, keyed by `UserName` |
 
 > These collections are queried by the Financial Advice Agent through the MongoDB MCP server.
@@ -196,8 +198,8 @@ The Leafy Bank financial advice agent requires seed data in your Atlas cluster. 
    CHAT_COMPLETIONS_MODEL_ID=us.anthropic.claude-sonnet-4-6
 
    # Checkpointer Collections
-   CHECKPOINTS_AIO_COLLECTION=openFinanceCheckpoints
-   CHECKPOINTS_WRITES_AIO_COLLECTION=openFinanceCheckpointWrites
+   CHECKPOINTS_AIO_COLLECTION=openbankingCheckpoints
+   CHECKPOINTS_WRITES_AIO_COLLECTION=openbankingCheckpointWrites
 
    # Open Finance Backend API
    OPEN_FINANCE_API_URL=http://localhost:8003
@@ -265,16 +267,16 @@ make clean    # Remove container and images
 
 ## API Endpoints
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
-| `GET` | `/` | Health check |
-| `GET` | `/chatbot` | Embedded React chat UI |
-| `POST` | `/chat` | Send message, get response + optional interrupt |
-| `POST` | `/chat/resume` | Resume after interrupt (bank login or consent approval) |
-| `POST` | `/chat/stream` | Send message, stream agent steps via SSE |
-| `POST` | `/chat/stream/resume` | Stream after resume |
-| `POST` | `/checkpointer/clear-all-memory` | Clear all conversation threads |
-| `GET` | `/api/v1/encryption-demo/compare/{agent_name}` | QE encrypted vs decrypted agent profile comparison |
+| Method | Path                                           | Purpose                                                 |
+| ------ | ---------------------------------------------- | ------------------------------------------------------- |
+| `GET`  | `/`                                            | Health check                                            |
+| `GET`  | `/chatbot`                                     | Embedded React chat UI                                  |
+| `POST` | `/chat`                                        | Send message, get response + optional interrupt         |
+| `POST` | `/chat/resume`                                 | Resume after interrupt (bank login or consent approval) |
+| `POST` | `/chat/stream`                                 | Send message, stream agent steps via SSE                |
+| `POST` | `/chat/stream/resume`                          | Stream after resume                                     |
+| `POST` | `/checkpointer/clear-all-memory`               | Clear all conversation threads                          |
+| `GET`  | `/api/v1/encryption-demo/compare/{agent_name}` | QE encrypted vs decrypted agent profile comparison      |
 
 ### Request Format
 
@@ -315,54 +317,54 @@ When the agent pauses for human input, `response` is empty and `interrupt` conta
 
 The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events with these event types:
 
-| Event Type | Description |
-| ---------- | ----------- |
-| `thread_id` | Conversation thread identifier |
-| `status` | Agent routing status (which agent is active) |
-| `tool_call` | Tool invocation with name and arguments |
-| `tool_result` | Tool execution result |
-| `progress` | Sub-step progress updates |
-| `agent_complete` | Agent finished its turn |
-| `response` | Final agent response text |
-| `suggestions` | Contextual reply suggestions (e.g., "Approve consent", bank names) |
-| `interrupt` | Workflow paused for human input |
-| `error` | Error details |
-| `done` | Stream complete |
+| Event Type       | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `thread_id`      | Conversation thread identifier                                     |
+| `status`         | Agent routing status (which agent is active)                       |
+| `tool_call`      | Tool invocation with name and arguments                            |
+| `tool_result`    | Tool execution result                                              |
+| `progress`       | Sub-step progress updates                                          |
+| `agent_complete` | Agent finished its turn                                            |
+| `response`       | Final agent response text                                          |
+| `suggestions`    | Contextual reply suggestions (e.g., "Approve consent", bank names) |
+| `interrupt`      | Workflow paused for human input                                    |
+| `error`          | Error details                                                      |
+| `done`           | Stream complete                                                    |
 
 ## Agent Tools Reference
 
 ### Consent Agent (9 Tools)
 
-| Tool | Purpose |
-| ---- | ------- |
-| `list_institutions` | List available external banks |
-| `get_default_permissions` | Show permissions for a consent purpose |
-| `create_consent` | Create a new consent (returns ConsentId and status) |
-| `get_consent` | Check consent status by ID |
-| `list_user_consents` | List all of the user's consents |
-| `request_bank_login` | Pause agent — user logs into external bank |
-| `approve_consent` | Pause agent — user explicitly approves consent |
-| `revoke_consent` | Revoke an active consent |
-| `fetch_and_cache_data` | Fetch external data after consent approval and cache it for the advice agent |
+| Tool                      | Purpose                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `list_institutions`       | List available external banks                                                |
+| `get_default_permissions` | Show permissions for a consent purpose                                       |
+| `create_consent`          | Create a new consent (returns ConsentId and status)                          |
+| `get_consent`             | Check consent status by ID                                                   |
+| `list_user_consents`      | List all of the user's consents                                              |
+| `request_bank_login`      | Pause agent — user logs into external bank                                   |
+| `approve_consent`         | Pause agent — user explicitly approves consent                               |
+| `revoke_consent`          | Revoke an active consent                                                     |
+| `fetch_and_cache_data`    | Fetch external data after consent approval and cache it for the advice agent |
 
 **Consent Purposes:**
 
-| Purpose | Description |
-| ------- | ----------- |
+| Purpose            | Description                                            |
+| ------------------ | ------------------------------------------------------ |
 | `FINANCIAL_ADVICE` | General financial insights over the user's shared data |
 
 > Omit the purpose (or pass `null`) for general access with all permissions.
 
 ### Financial Advice Agent (MongoDB MCP)
 
-| Tool | Purpose |
-| ---- | ------- |
-| `get_current_user_id` | Get authenticated user identifier |
-| MongoDB MCP `find` | Query any allowed collection |
-| MongoDB MCP `aggregate` | Run aggregation pipelines |
-| MongoDB MCP `count` | Count documents |
-| MongoDB MCP `list-collections` | List available collections |
-| MongoDB MCP `collection-schema` | Inspect collection schema |
+| Tool                            | Purpose                           |
+| ------------------------------- | --------------------------------- |
+| `get_current_user_id`           | Get authenticated user identifier |
+| MongoDB MCP `find`              | Query any allowed collection      |
+| MongoDB MCP `aggregate`         | Run aggregation pipelines         |
+| MongoDB MCP `count`             | Count documents                   |
+| MongoDB MCP `list-collections`  | List available collections        |
+| MongoDB MCP `collection-schema` | Inspect collection schema         |
 
 ## Common Errors
 
@@ -386,6 +388,7 @@ The `/chat/stream` and `/chat/stream/resume` endpoints return Server-Sent Events
 ### Multi-Agent Supervisor Pattern
 
 <!-- TODO: Add supervisor routing diagram -->
+
 ![Supervisor Routing](placeholder-supervisor-routing.png)
 
 The Supervisor reads the conversation history and `active_consents` state to decide which agent should handle each turn. Key behaviors:
