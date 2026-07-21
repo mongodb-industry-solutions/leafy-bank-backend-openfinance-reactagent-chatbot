@@ -37,7 +37,7 @@ if not MONGODB_URI:
     sys.exit(1)
 
 DB_NAME = os.getenv("DATABASE_NAME", "leafy_bank_bian")
-COLL_NAME = "openbankingAgentProfiles"
+COLL_NAME = os.getenv("AGENT_PROFILES_COLLECTION", "openbankingAgentProfiles")
 KEY_VAULT_NAMESPACE = "encryption.__keyVault_agent_profiles"
 MASTER_KEY_PATH = os.getenv(
     "LOCAL_MASTER_KEY_PATH",
