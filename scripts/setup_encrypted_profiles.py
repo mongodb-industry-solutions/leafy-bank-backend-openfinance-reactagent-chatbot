@@ -1,7 +1,7 @@
 """
 One-time setup: Create the encrypted agent profiles collection with Queryable Encryption.
 
-Creates the `openFinanceAgentProfiles` collection in the DATABASE_NAME database,
+Creates the `openbankingAgentProfiles` collection in the DATABASE_NAME database,
 generates data encryption keys (DEKs) for each encrypted field, creates indexes,
 and saves the resulting encrypted_fields_map to encryption_config.json for runtime use.
 
@@ -37,7 +37,7 @@ if not MONGODB_URI:
     sys.exit(1)
 
 DB_NAME = os.getenv("DATABASE_NAME", "leafy_bank_bian")
-COLL_NAME = "openFinanceAgentProfiles"
+COLL_NAME = os.getenv("AGENT_PROFILES_COLLECTION", "openbankingAgentProfiles")
 KEY_VAULT_NAMESPACE = "encryption.__keyVault_agent_profiles"
 MASTER_KEY_PATH = os.getenv(
     "LOCAL_MASTER_KEY_PATH",
