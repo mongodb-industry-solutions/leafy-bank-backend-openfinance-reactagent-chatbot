@@ -1,6 +1,6 @@
 # ---- Stage 0: Node.js base (for MCP server) ----
 # Node 22: mongodb-mcp-server requires ^20.19 || ^22.13 || >=24; Node 20 is deprecated upstream.
-FROM node:22-slim AS node-base
+FROM node:26-slim AS node-base
 
 # ---- Stage 1: Build ----
 FROM python:3.11-slim-bookworm AS builder
