@@ -1,14 +1,13 @@
 import json
 import logging
-from typing import Optional
 
 import httpx
-from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
 from langgraph.types import interrupt
 
-from http_client import http_client
 from agent.tools.auth import get_bearer_token
+from http_client import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +64,11 @@ async def list_institutions() -> str:
         return f"Open Finance authorized institutions are: {', '.join(names)}"
     except Exception as e:
         logger.error(f"Error listing institutions: {e}")
-        return f"Error fetching institutions: {str(e)}"
+        return f"Error fetching institutions: {e!s}"
 
 
 @tool
-async def get_default_permissions(purpose: Optional[str] = None) -> str:
+async def get_default_permissions(purpose: str | None = None) -> str:
     """Get the default data permissions and their user-facing benefit descriptions for a given consent purpose.
     ALWAYS call this before explaining scope to the user. Present ALL listed permissions — do not omit any.
     The returned descriptions are written for the user — present them directly.
@@ -98,7 +97,7 @@ async def create_consent(
     source_institution_name: str,
     permissions: list[str],
     config: RunnableConfig,
-    purpose: Optional[str] = None,
+    purpose: str | None = None,
 ) -> str:
     """Create a new data sharing consent. Only call this AFTER the user has reviewed and confirmed the scope.
     Duration is fixed at 30 days — do not ask the user about duration.
@@ -162,7 +161,7 @@ async def create_consent(
         return f"Error creating consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error creating consent: {e}")
-        return f"Error creating consent: {str(e)}"
+        return f"Error creating consent: {e!s}"
 
 
 @tool
@@ -195,7 +194,7 @@ async def get_consent(consent_id: str, config: RunnableConfig) -> str:
         })
     except Exception as e:
         logger.error(f"Error fetching consent: {e}")
-        return f"Error fetching consent: {str(e)}"
+        return f"Error fetching consent: {e!s}"
 
 
 @tool
@@ -239,7 +238,7 @@ async def list_user_consents(config: RunnableConfig) -> str:
         return json.dumps(results)
     except Exception as e:
         logger.error(f"Error listing consents: {e}")
-        return f"Error listing consents: {str(e)}"
+        return f"Error listing consents: {e!s}"
 
 
 @tool
@@ -352,7 +351,7 @@ async def approve_consent(consent_id: str, config: RunnableConfig) -> str:
         return f"Error approving consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error approving consent: {e}")
-        return f"Error approving consent: {str(e)}"
+        return f"Error approving consent: {e!s}"
 
 
 @tool
@@ -386,7 +385,7 @@ async def revoke_consent(consent_id: str, config: RunnableConfig) -> str:
         return f"Error revoking consent (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error revoking consent: {e}")
-        return f"Error revoking consent: {str(e)}"
+        return f"Error revoking consent: {e!s}"
 
 
 @tool
@@ -516,4 +515,4 @@ async def fetch_and_cache_data(consent_id: str, config: RunnableConfig) -> str:
         return f"Error fetching and caching consent data (HTTP {e.response.status_code}): {detail}"
     except Exception as e:
         logger.error(f"Error fetching and caching consent data: {e}")
-        return f"Error fetching and caching consent data: {str(e)}"
+        return f"Error fetching and caching consent data: {e!s}"

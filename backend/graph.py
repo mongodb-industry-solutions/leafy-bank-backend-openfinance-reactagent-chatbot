@@ -1,23 +1,22 @@
 """Parent StateGraph — orchestrates supervisor, consent agent, and financial advice agent."""
 
 import logging
-from typing import Optional
 
-from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.mongodb import MongoDBSaver
+from langgraph.graph import END, START, StateGraph
 
-from config import (
-    DATABASE_NAME,
-    CHECKPOINTS_AIO_COLLECTION,
-    CHECKPOINTS_WRITES_AIO_COLLECTION,
-)
-from state import AgentState
-from agent.db.mdb import MongoDBConnector
-from agent.db.encrypted_connector import get_encrypted_connector
-from agent.db.agent_profiles import AgentProfileService
 from agent.consent_agent import create_consent_agent
+from agent.db.agent_profiles import AgentProfileService
+from agent.db.encrypted_connector import get_encrypted_connector
+from agent.db.mdb import MongoDBConnector
 from agent.financial_advice_agent import create_financial_advice_agent
 from agent.supervisor import create_supervisor_node
+from config import (
+    CHECKPOINTS_AIO_COLLECTION,
+    CHECKPOINTS_WRITES_AIO_COLLECTION,
+    DATABASE_NAME,
+)
+from state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +92,7 @@ def build_graph(checkpointer: MongoDBSaver, mcp_tools: list | None = None):
     return graph
 
 
-async def extract_response(agent, config: dict) -> tuple[str, Optional[dict], list, dict]:
+async def extract_response(agent, config: dict) -> tuple[str, dict | None, list, dict]:
     """Extract the agent's last AI message, any pending interrupt, full message history, and state values."""
     state = await agent.aget_state(config)
 

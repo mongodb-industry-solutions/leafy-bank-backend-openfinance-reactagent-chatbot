@@ -5,8 +5,8 @@ import logging
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 
-from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
 from agent.tools.financial_advice_tools import get_current_user_id
+from config import AWS_REGION, CHAT_COMPLETIONS_MODEL_ID
 
 logger = logging.getLogger(__name__)
 

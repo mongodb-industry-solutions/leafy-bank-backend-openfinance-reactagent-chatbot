@@ -6,7 +6,7 @@ import uuid
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from graph import get_checkpointer, build_graph, extract_response
+from graph import build_graph, extract_response, get_checkpointer
 
 
 async def main():
