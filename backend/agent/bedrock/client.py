@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 
 import boto3
 from botocore.config import Config
@@ -10,8 +9,8 @@ from config import AWS_REGION
 class BedrockClient:
     """Implementation of BedrockClient class."""
 
-    def __init__(self, region_name: Optional[str] = None, aws_access_key: Optional[str] = None,
-                 aws_secret_key: Optional[str] = None, assumed_role: Optional[str] = None) -> None:
+    def __init__(self, region_name: str | None = None, aws_access_key: str | None = None,
+                 aws_secret_key: str | None = None, assumed_role: str | None = None) -> None:
         """Initialize BedrockClient class.
 
         Args:
@@ -27,7 +26,7 @@ class BedrockClient:
     
     def _get_bedrock_client(
             self,
-            runtime: Optional[bool] = True,
+            runtime: bool | None = True,
     ):
         """Create a boto3 client for Amazon Bedrock, with optional configuration overrides."""
         target_region = self.region_name or AWS_REGION

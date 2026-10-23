@@ -4,8 +4,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from config import AGENT_PROFILES_COLLECTION
 from agent.db.encrypted_connector import EncryptedMongoDBConnector
+from config import AGENT_PROFILES_COLLECTION
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,6 @@ Server-Sent Events for real-time frontend updates.
 import json
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +115,7 @@ def _handle_custom_event(namespace: tuple, data) -> list[str]:
     return [sse_event("progress", payload)]
 
 
-def _extract_agent_name(namespace: tuple) -> Optional[str]:
+def _extract_agent_name(namespace: tuple) -> str | None:
     """Extract the agent name from a LangGraph namespace tuple."""
     if not namespace:
         return None
@@ -128,7 +127,7 @@ def _extract_agent_name(namespace: tuple) -> Optional[str]:
     return name
 
 
-def _process_node_update(node_name: str, update: dict, agent_name: Optional[str]) -> list[str]:
+def _process_node_update(node_name: str, update: dict, agent_name: str | None) -> list[str]:
     """Process a single node update and return SSE events."""
     results = []
 

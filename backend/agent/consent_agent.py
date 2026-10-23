@@ -5,18 +5,18 @@ import logging
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrockConverse
 
-from config import BEDROCK_CLIENT, CONSENT_MODEL_ID
 from agent.tools.consent_tools import (
-    list_institutions,
-    get_default_permissions,
+    approve_consent,
     create_consent,
+    fetch_and_cache_data,
     get_consent,
+    get_default_permissions,
+    list_institutions,
     list_user_consents,
     request_bank_login,
-    approve_consent,
     revoke_consent,
-    fetch_and_cache_data,
 )
+from config import BEDROCK_CLIENT, CONSENT_MODEL_ID
 
 logger = logging.getLogger(__name__)
 
