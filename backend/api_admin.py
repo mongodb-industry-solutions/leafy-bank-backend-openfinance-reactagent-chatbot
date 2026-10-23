@@ -1,14 +1,13 @@
 """Admin endpoints for managing agent profiles and reloading the agent graph."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from config import ADMIN_API_KEY
-from graph import get_checkpointer, build_graph, profile_service
+from graph import build_graph, get_checkpointer, profile_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +27,13 @@ class CreateProfileRequest(BaseModel):
     profile_name: str
     system_prompt: str
     tool_config: dict = {}
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 class UpdateProfileRequest(BaseModel):
-    system_prompt: Optional[str] = None
-    tool_config: Optional[dict] = None
-    metadata: Optional[dict] = None
+    system_prompt: str | None = None
+    tool_config: dict | None = None
+    metadata: dict | None = None
 
 
 class ActivateProfileRequest(BaseModel):
@@ -43,7 +42,7 @@ class ActivateProfileRequest(BaseModel):
 
 
 @router.get("/profiles")
-async def list_profiles(agent_name: Optional[str] = None):
+async def list_profiles(agent_name: str | None = None):
     """List all profiles, optionally filtered by agent_name."""
     profiles = profile_service.list_profiles(agent_name)
     # Strip _id for JSON serialization

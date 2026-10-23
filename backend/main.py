@@ -4,26 +4,24 @@ import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_mcp_adapters.tools import load_mcp_tools
-
-from streaming import sse_event, process_stream_event
-from suggestions import generate_suggestions
-from config import LEAFY_BANK_MONGODB_URI
-from api_checkpointer import router as checkpointer_router
 from api_admin import router as admin_router
-from routers.encryption_demo import router as encryption_demo_router
-from graph import get_checkpointer, build_graph, extract_response, profile_service
+from api_checkpointer import router as checkpointer_router
+from config import LEAFY_BANK_MONGODB_URI
+from graph import build_graph, extract_response, get_checkpointer, profile_service
 from http_client import http_client
+from routers.encryption_demo import router as encryption_demo_router
+from streaming import process_stream_event, sse_event
+from suggestions import generate_suggestions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,14 +35,15 @@ async def lifespan(app: FastAPI):
     """Manage resources: MCP server, checkpointer, and agent graph."""
     # Disable all tools except: find, aggregate, count, list-collections,
     # collection-schema, connect (connect needed for pre-connect at startup)
-    disabled_tools = ",".join([
+    disabled_tools_list = [
         # Categories
         "atlas", "create", "update", "delete",
         # Individual tools we don't need
         "collection-indexes", "collection-storage-size", "db-stats",
         "disconnect", "explain", "export", "list-databases", "mongodb-logs",
         "rename-collection", "switch-connection",
-    ])
+    ]
+    disabled_tools = ",".join(disabled_tools_list)
     # Prefer the pinned binary pre-installed in the image (see Dockerfile.backend)
     # for a deterministic, offline boot; fall back to a pinned npx for local dev
     # where it isn't installed globally. Never use a floating @latest.
@@ -135,24 +134,24 @@ app.include_router(encryption_demo_router, prefix="/api/v1/encryption-demo", tag
 
 
 class ChatRequest(BaseModel):
-    thread_id: Optional[str] = None
+    thread_id: str | None = None
     user_id: str
     message: str
-    profile: Optional[str] = None
+    profile: str | None = None
 
 
 class ResumeRequest(BaseModel):
     thread_id: str
     user_id: str
     resume_data: dict
-    profile: Optional[str] = None
+    profile: str | None = None
 
 
 class ChatResponse(BaseModel):
     thread_id: str
     response: str
-    interrupt: Optional[dict] = None
-    suggestions: Optional[list[str]] = None
+    interrupt: dict | None = None
+    suggestions: list[str] | None = None
 
 
 @app.get("/")
@@ -294,7 +293,7 @@ async def chat_stream(request: ChatRequest, fastapi_request: Request):
                 yield sse_event("done", {})
 
         except Exception as e:
-            logger.error(f"Stream error: {e}", exc_info=True)
+            logger.exception("Stream error")
             yield sse_event("error", {"message": str(e)})
             yield sse_event("done", {})
 
@@ -358,7 +357,7 @@ async def chat_stream_resume(request: ResumeRequest, fastapi_request: Request):
                 yield sse_event("done", {})
 
         except Exception as e:
-            logger.error(f"Stream resume error: {e}", exc_info=True)
+            logger.exception("Stream resume error")
             yield sse_event("error", {"message": str(e)})
             yield sse_event("done", {})
 

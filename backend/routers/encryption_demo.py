@@ -13,8 +13,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from config import DATABASE_NAME, AGENT_PROFILES_COLLECTION
-from graph import profile_service, db
+from config import AGENT_PROFILES_COLLECTION, DATABASE_NAME
+from graph import db, profile_service
 
 logger = logging.getLogger(__name__)
 

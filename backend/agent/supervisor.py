@@ -2,7 +2,8 @@
 
 import json
 import logging
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import Literal
 
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import AIMessage, SystemMessage
@@ -38,7 +39,7 @@ _supervisor_llm_structured = _supervisor_llm.with_structured_output(RouterDecisi
 
 def _extract_new_consent_from_messages(
     messages: list, existing_ids: set
-) -> Optional[ConsentInfo]:
+) -> ConsentInfo | None:
     """Scan recent tool messages for a NEWLY approved consent not already tracked.
 
     Searches backward (most recent first), limited to the last 20 tool messages.

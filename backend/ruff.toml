@@ -1,0 +1,6 @@
+# Backend modules (config, graph, agent, ...) are top-level imports, so treat them as first-party.
+src = ["."]
+
+[lint]
+# Tool/endpoint boundaries intentionally catch Exception to return an error message to the agent/client.
+ignore = ["BLE001"]

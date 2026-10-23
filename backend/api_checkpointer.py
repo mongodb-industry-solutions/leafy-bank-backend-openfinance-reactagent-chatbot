@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException
 import logging
 
-from graph import db
+from fastapi import APIRouter, HTTPException
+
 from config import (
     CHECKPOINTS_AIO_COLLECTION,
     CHECKPOINTS_WRITES_AIO_COLLECTION,
 )
+from graph import db
 
 logger = logging.getLogger(__name__)
 
@@ -28,5 +29,5 @@ async def clear_all_memory():
             "message": f"Deleted {deleted_count} memory records."
         }
     except Exception as e:
-        logger.error(f"Error clearing memory: {str(e)}")
+        logger.error(f"Error clearing memory: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))

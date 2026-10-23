@@ -15,16 +15,16 @@ from bson import json_util
 from pymongo import MongoClient
 from pymongo.encryption_options import AutoEncryptionOpts
 
+from agent.db.mdb import MongoDBConnector
 from config import (
-    MONGODB_URI,
-    DATABASE_NAME,
     APP_NAME,
+    CRYPT_SHARED_LIB_PATH,
+    DATABASE_NAME,
     ENCRYPTION_CONFIG_PATH,
     KMS_PROVIDER,
-    CRYPT_SHARED_LIB_PATH,
     LOCAL_MASTER_KEY_PATH,
+    MONGODB_URI,
 )
-from agent.db.mdb import MongoDBConnector
 
 logger = logging.getLogger(__name__)
 
